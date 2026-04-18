@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["dom", "dom.iterable", "es2020"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": ".test-dist",
+    "rootDir": ".",
+    "noEmit": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/app/page.tsx",
+    "src/components/**/*.ts",
+    "src/components/**/*.tsx"
+  ],
+  "exclude": ["node_modules", ".next", ".test-dist"]
+}

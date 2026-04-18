@@ -26,3 +26,8 @@ frontend/tsconfig.tsbuildinfo
 # Logs and local artifacts
 *.log
 data/local_db/
+backend/tests/.tmp/
+backend/tests/project-memory-*/
+backend/storage/.tmp/
+pytest-cache-files-*/
+tmp*/
