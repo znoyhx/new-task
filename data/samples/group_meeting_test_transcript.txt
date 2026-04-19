@@ -1,0 +1,10 @@
+[00:00:05] 李伟：这周我把 reviewer-comment 数据集上的基线重新跑了一遍，macro F1 提升到了 73.8。
+[00:00:17] 李伟：提升主要来自 hard examples，但是 curriculum 的第三阶段之后 calibration error 还是明显变差。
+[00:00:29] 李伟：我现在的两个阻塞点，一个是 ablation table 还没整理干净，另一个是长上下文实验一开 token-level logging 就会崩。
+[00:00:43] 陈老师：下周先不要开新方向，优先把 hard-negative curriculum ablation 做完整，同时把 macro F1 和 calibration error 一起汇报。
+[00:00:57] 陈老师：第二个动作是把 retrieval-assisted logging 做通，我希望下次每个 action item 都能直接跳回 transcript 里的原始片段。
+[00:01:11] 陈老师：文献上先读三篇，一篇 curriculum learning，一篇 calibration under imbalance，一篇 retrieval-grounded meeting agents。
+[00:01:24] 张敏：如果李伟把失败日志发给我，我可以帮他一起定位 logging pipeline 为什么在 long-context run 里挂掉。
+[00:01:36] 李伟：好的，我今天晚上把失败 trace 和配置一起发给张敏。
+[00:01:47] 陈老师：还有一个需要查证的判断，小样本设置下 curriculum learning 是否能够稳定提升 hard-example macro F1，这个结论最好补一下证据。
+[00:02:01] 陈老师：下次组会我最关心三件事，ablation table、calibration 是否稳住、以及 traceability demo 能不能完整跑通。
