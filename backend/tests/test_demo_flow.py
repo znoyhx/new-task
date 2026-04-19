@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
+from backend.config import load_settings
 from backend.schemas.action_item import ActionItem
 from backend.schemas.claim import ClaimVerificationResult
 from backend.schemas.evidence_card import EvidenceCard
@@ -23,6 +24,7 @@ from backend.services.project_memory_service import ProjectMemoryService
 from backend.services.reading_recommendation_service import ReadingRecommendationService
 from backend.services.research_plan_service import ResearchPlanService
 from backend.services.transcript_parser_service import TranscriptParserService
+from backend.services.transcription_service import TranscriptionService
 from backend.storage.lancedb_store import LanceDBStore
 from backend.storage.sqlite_store import SQLiteStore
 
@@ -34,6 +36,43 @@ class StubChatJsonClient:
     def chat_json(self, prompt: str, **_: object) -> dict[str, object]:
         _ = prompt
         return self.payload
+
+
+class StubAudioTranscriber:
+    def __init__(self, transcript_text: str) -> None:
+        self.transcript_text = transcript_text
+
+    def transcribe_file(
+        self,
+        file_path: str | Path,
+        *,
+        language_hint: str | None = None,
+    ) -> dict[str, object]:
+        _ = (file_path, language_hint)
+        return {
+            "backend": "faster-whisper",
+            "text": self.transcript_text,
+            "segments": [
+                {
+                    "text": "Alice reran the curriculum learning baseline and saw higher macro F1 on hard examples.",
+                    "start": 0.0,
+                    "end": 11.0,
+                },
+                {
+                    "text": "Professor Chen asked for the hard negative ablation and retrieval assisted logging.",
+                    "start": 11.0,
+                    "end": 22.0,
+                },
+                {
+                    "text": "Professor Chen also wants evidence on the curriculum learning claim.",
+                    "start": 22.0,
+                    "end": 28.0,
+                },
+            ],
+            "language": "en",
+            "duration_seconds": 28.0,
+            "elapsed_seconds": 0.21,
+        }
 
 
 def build_memory_service(workspace: Path) -> ProjectMemoryService:
@@ -382,5 +421,148 @@ def test_demo_flow_returns_stable_non_empty_outputs() -> None:
         assert "## 5. Next-week execution plan" in outline.content_markdown
         assert "hard-negative ablation" in weekly_report.content_markdown.lower()
         assert "retrieval-assisted logging" in next_week_plan.content_markdown.lower()
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def test_demo_audio_import_flow_returns_stable_non_empty_outputs() -> None:
+    transcript_text = Path("data/samples/demo_meeting_transcript.md").read_text(encoding="utf-8")
+    audio_bytes = Path("data/samples/demo_meeting_audio.wav").read_bytes()
+    workspace = Path("backend/storage/.tmp") / f"demo-audio-flow-{uuid4().hex}"
+    workspace.mkdir(parents=True, exist_ok=True)
+    try:
+        settings = load_settings(
+            env={
+                "DATA_DIR": str(workspace),
+                "SQLITE_PATH": str(workspace / "demo-audio.sqlite3"),
+                "LANCEDB_PATH": str(workspace / "lancedb"),
+            },
+            repo_root=Path.cwd(),
+            dotenv_path=Path.cwd() / ".env",
+        )
+        transcription_service = TranscriptionService(
+            settings=settings,
+            audio_transcriber=StubAudioTranscriber(transcript_text),
+        )
+        imported = transcription_service.import_uploaded_audio(
+            file_bytes=audio_bytes,
+            filename="demo_meeting_audio.wav",
+            content_type="audio/wav",
+            meeting_title="Demo Audio Meeting",
+            language_hint="en",
+        )
+        transcript = transcription_service.load_transcript(imported.meeting.meeting_id)
+
+        progress = ProgressExtractionService(
+            client=StubChatJsonClient(
+                {
+                    "summary": "Audio import preserved Alice's progress, blockers, and advisor follow-ups.",
+                    "student_progress": [
+                        {
+                            "student_name": "Alice",
+                            "completed_work": [
+                                "Reran the curriculum-learning baseline on the reviewer-comment benchmark."
+                            ],
+                            "current_result": "Hard-example macro F1 improved, but calibration still regresses.",
+                            "blockers": [
+                                "The ablation table is incomplete.",
+                                "Long-context token logging still fails.",
+                            ],
+                            "risks": [
+                                {
+                                    "title": "Calibration still regresses after stage three",
+                                    "level": "high",
+                                    "description": "The audio-derived transcript still shows a calibration concern.",
+                                }
+                            ],
+                            "next_step_suggestion": "Finish the ablation table and stabilize trace logging.",
+                        }
+                    ],
+                }
+            )
+        ).extract_progress(transcript, meeting_id=imported.meeting.meeting_id)
+
+        ideas = IdeaCaptureService(
+            client=StubChatJsonClient(
+                {
+                    "summary": "Two advisor ideas survive the audio import path.",
+                    "ideas": [
+                        {
+                            "id": f"{imported.meeting.meeting_id}-idea-01",
+                            "student_name": "Alice",
+                            "idea_text": "Keep the hard-negative curriculum ablation in next week's plan.",
+                            "suggested_by": "Prof. Chen",
+                            "expected_validation": "Improve macro F1 without hurting calibration.",
+                            "validation_metrics": ["macro F1", "calibration error"],
+                        },
+                        {
+                            "id": f"{imported.meeting.meeting_id}-idea-02",
+                            "student_name": "Bob",
+                            "idea_text": "Test retrieval-assisted logging for transcript traceability.",
+                            "suggested_by": "Prof. Chen",
+                            "expected_validation": "Every action item keeps one traceable chunk.",
+                            "validation_metrics": ["trace coverage"],
+                        },
+                    ],
+                }
+            )
+        ).capture_ideas(transcript, meeting_id=imported.meeting.meeting_id).ideas
+
+        research_plan = ResearchPlanService(
+            client=StubChatJsonClient(
+                {
+                    "summary": "The audio path still yields a concrete next-week plan.",
+                    "tasks": [
+                        {
+                            "idea_id": f"{imported.meeting.meeting_id}-idea-01",
+                            "student_name": "Alice",
+                            "title": "Finalize the hard-negative ablation and calibration report",
+                            "owner": "Alice",
+                            "due_date": "Friday",
+                            "priority": "high",
+                            "success_metrics": ["macro F1", "calibration error"],
+                            "dependency_note": "Needs a clean ablation table.",
+                            "rationale": "This is the main advisor request carried through the audio flow.",
+                        }
+                    ],
+                }
+            )
+        ).generate_plan(
+            transcript,
+            ideas,
+            progress=progress,
+            meeting_id=imported.meeting.meeting_id,
+        )
+
+        readings = ReadingRecommendationService(
+            client=StubChatJsonClient(
+                {
+                    "summary": "Audio import still yields non-empty reading recommendations.",
+                    "recommendations": [
+                        {
+                            "idea_id": f"{imported.meeting.meeting_id}-idea-01",
+                            "student_name": "Alice",
+                            "title": "Curriculum Learning for Robust Classification",
+                            "source_url": "https://example.org/curriculum",
+                            "reason": "Useful for planning the staged hard-negative experiment.",
+                            "priority": "high",
+                        }
+                    ],
+                }
+            )
+        ).generate_recommendations(
+            transcript,
+            ideas,
+            progress=progress,
+            meeting_id=imported.meeting.meeting_id,
+        )
+
+        assert imported.meeting.source_type == "audio"
+        assert imported.meeting.transcription_status == "completed"
+        assert transcript.chunks
+        assert progress.student_progress
+        assert ideas
+        assert research_plan.tasks
+        assert readings.recommendations
     finally:
         shutil.rmtree(workspace, ignore_errors=True)

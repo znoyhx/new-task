@@ -216,33 +216,22 @@ function mapDeliverable(
   };
 }
 
-export async function processMeetingTranscript(transcriptText: string): Promise<DashboardResultData> {
-  const imported = await requestJson<MeetingImportResponse>("/api/meetings/import", {
+async function reviewImportedMeeting(meetingId: string): Promise<MeetingReviewResponse> {
+  return requestJson<MeetingReviewResponse>(`/api/meetings/${meetingId}/review`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      meeting_title: "Demo Weekly Group Meeting",
-      source_type: "transcript",
-      transcript_text: transcriptText,
+      project_id: "evidenceflow-demo-project",
+      project_name: "EvidenceFlow Demo Project",
+      project_description: "Single-workspace research cockpit for weekly meetings.",
+      project_domain: "research-automation",
+      verify_claims: true,
+      max_claims_to_verify: 1,
     }),
   });
+}
 
-  const review = await requestJson<MeetingReviewResponse>(
-    `/api/meetings/${imported.meeting.meeting_id}/review`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        project_id: "evidenceflow-demo-project",
-        project_name: "EvidenceFlow Demo Project",
-        project_description: "Single-workspace research cockpit for weekly meetings.",
-        project_domain: "research-automation",
-        verify_claims: true,
-        max_claims_to_verify: 1,
-      }),
-    }
-  );
-
+function mapReviewToDashboardResult(review: MeetingReviewResponse): DashboardResultData {
   return {
     projectId: review.project.project_id,
     meetingId: review.meeting.meeting_id,
@@ -325,6 +314,42 @@ export async function processMeetingTranscript(transcriptText: string): Promise<
     },
     deliverables: review.deliverables.map(mapDeliverable),
   };
+}
+
+export async function processMeetingTranscript(transcriptText: string): Promise<DashboardResultData> {
+  const imported = await requestJson<MeetingImportResponse>("/api/meetings/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      meeting_title: "Demo Weekly Group Meeting",
+      source_type: "transcript",
+      transcript_text: transcriptText,
+    }),
+  });
+
+  return mapReviewToDashboardResult(await reviewImportedMeeting(imported.meeting.meeting_id));
+}
+
+export async function processMeetingAudio(
+  audioFile: File,
+  options?: {
+    meetingTitle?: string;
+    languageHint?: string;
+  }
+): Promise<DashboardResultData> {
+  const formData = new FormData();
+  formData.append("file", audioFile);
+  formData.append("meeting_title", options?.meetingTitle || audioFile.name || "Audio Meeting");
+  if (options?.languageHint) {
+    formData.append("language_hint", options.languageHint);
+  }
+
+  const imported = await requestJson<MeetingImportResponse>("/api/meetings/import-audio", {
+    method: "POST",
+    body: formData,
+  });
+
+  return mapReviewToDashboardResult(await reviewImportedMeeting(imported.meeting.meeting_id));
 }
 
 export async function fetchDeliverable(

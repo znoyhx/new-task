@@ -1,38 +1,36 @@
 "use client";
 
-import type { ClaimData } from "./dashboard-types";
+import { dashboardCopy, getEvidenceStanceLabel, getVerdictLabel } from "./dashboard-copy";
+import type { ClaimData, DashboardLanguage } from "./dashboard-types";
 
 type EvidencePanelProps = {
+  language: DashboardLanguage;
   claims: ClaimData[];
   activeClaimId: string | null;
   isReady: boolean;
   onSelectClaim: (claimId: string) => void;
 };
 
-function formatVerdict(verdict: ClaimData["verdict"]) {
-  if (verdict === "needs_verification") {
-    return "Needs verification";
-  }
-  return verdict.charAt(0).toUpperCase() + verdict.slice(1);
-}
-
 export function EvidencePanel({
+  language,
   claims,
   activeClaimId,
   isReady,
   onSelectClaim,
 }: EvidencePanelProps) {
+  const copy = dashboardCopy[language];
+
   if (!isReady) {
     return (
       <section className="panel">
         <div className="panel-header compact-header">
           <div>
-            <p className="eyebrow">Evidence</p>
-            <h3>Reference Basis</h3>
+            <p className="eyebrow">{copy.evidence}</p>
+            <h3>{copy.referenceBasis}</h3>
           </div>
         </div>
         <div className="empty-panel">
-          <p>The evidence lane appears only when the meeting contains a claim worth checking.</p>
+          <p>{copy.evidenceEmpty}</p>
         </div>
       </section>
     );
@@ -44,10 +42,10 @@ export function EvidencePanel({
     <section className="panel">
       <div className="panel-header compact-header">
         <div>
-          <p className="eyebrow">Evidence</p>
-          <h3>Reference Basis</h3>
+          <p className="eyebrow">{copy.evidence}</p>
+          <h3>{copy.referenceBasis}</h3>
         </div>
-        <span className="status-pill status-pill-soft">Secondary but traceable</span>
+        <span className="status-pill status-pill-soft">{copy.evidenceSecondary}</span>
       </div>
 
       <div className="claim-list">
@@ -61,11 +59,11 @@ export function EvidencePanel({
             <div className="claim-card-top">
               <strong>{claim.text}</strong>
               <span className={`stance-pill stance-${claim.verdict.replace("_", "-")}`}>
-                {formatVerdict(claim.verdict)}
+                {getVerdictLabel(language, claim.verdict)}
               </span>
             </div>
             <p className="claim-meta">
-              {claim.speaker} / confidence {claim.confidence}
+              {claim.speaker} / {copy.confidence} {claim.confidence}
             </p>
             <p>{claim.transcriptSnippet}</p>
           </button>
@@ -75,8 +73,8 @@ export function EvidencePanel({
       {activeClaim ? (
         <div className="subsection">
           <div className="subsection-header">
-            <p className="eyebrow">Evidence Cards</p>
-            <h4>{formatVerdict(activeClaim.verdict)}</h4>
+            <p className="eyebrow">{copy.evidenceCards}</p>
+            <h4>{getVerdictLabel(language, activeClaim.verdict)}</h4>
           </div>
           <ul className="evidence-list">
             {activeClaim.evidenceCards.map((card) => (
@@ -84,16 +82,16 @@ export function EvidencePanel({
                 <div className="evidence-card-top">
                   <strong>{card.sourceTitle}</strong>
                   <span className={`stance-pill stance-${card.stance.replace(" ", "-")}`}>
-                    {card.stance}
+                    {getEvidenceStanceLabel(language, card.stance)}
                   </span>
                 </div>
                 <p>{card.snippet}</p>
                 <div className="evidence-footer">
                   <span>
-                    {card.sourceType} / confidence {card.confidence}
+                    {card.sourceType} / {copy.confidence} {card.confidence}
                   </span>
                   <a href={card.sourceUrl} target="_blank" rel="noreferrer">
-                    Open source
+                    {copy.openSource}
                   </a>
                 </div>
               </li>

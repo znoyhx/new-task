@@ -4,15 +4,21 @@ import { startTransition, useState } from "react";
 
 import {
   demoTranscript,
-  navigation,
-  processingStages,
 } from "./dashboard-data";
 import { ActionItemsPanel } from "./action-items-panel";
-import { fetchDeliverable, processMeetingTranscript } from "./dashboard-api";
+import { fetchDeliverable, processMeetingAudio, processMeetingTranscript } from "./dashboard-api";
 import { BriefingPanel } from "./briefing-panel";
+import {
+  audioProcessingStagesByLanguage,
+  dashboardCopy,
+  getRiskLabel,
+  navigationByLanguage,
+  processingStagesByLanguage,
+} from "./dashboard-copy";
 import { EvidencePanel } from "./evidence-panel";
 import { MeetingUpload } from "./meeting-upload";
 import type {
+  DashboardLanguage,
   DashboardResultData,
   DashboardRunState,
   DeliverableKey,
@@ -20,18 +26,22 @@ import type {
   RiskLevel,
 } from "./dashboard-types";
 
-function formatRiskLabel(level: RiskLevel) {
-  if (level === "high") {
-    return "High risk";
+type MeetingInputMode = "transcript" | "audio";
+
+function formatFileSize(sizeBytes: number, language: DashboardLanguage) {
+  if (sizeBytes < 1024 * 1024) {
+    const sizeKb = Math.max(1, Math.round(sizeBytes / 1024));
+    return language === "zh" ? `${sizeKb} KB` : `${sizeKb} KB`;
   }
-  if (level === "medium") {
-    return "Medium risk";
-  }
-  return "Low risk";
+  const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+  return language === "zh" ? `${sizeMb} MB` : `${sizeMb} MB`;
 }
 
 export function DashboardWorkspace() {
+  const [language, setLanguage] = useState<DashboardLanguage>("zh");
+  const [inputMode, setInputMode] = useState<MeetingInputMode>("transcript");
   const [transcriptText, setTranscriptText] = useState("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [runState, setRunState] = useState<DashboardRunState>("idle");
   const [activeStageIndex, setActiveStageIndex] = useState(-1);
   const [errorMessage, setErrorMessage] = useState("");
@@ -40,14 +50,27 @@ export function DashboardWorkspace() {
     useState<DeliverableKey | null>("weekly-report");
   const [result, setResult] = useState<DashboardResultData | null>(null);
 
+  const copy = dashboardCopy[language];
+  const navigation = navigationByLanguage[language];
+  const processingStages =
+    inputMode === "audio"
+      ? audioProcessingStagesByLanguage[language]
+      : processingStagesByLanguage[language];
   const isReady = runState === "ready" && result !== null;
   const activeClaim = result?.claims.find((claim) => claim.id === activeClaimId) ?? result?.claims[0] ?? null;
   const highlightedChunkIds = activeClaim?.sourceChunkIds ?? [];
+  const selectedAudioFileName = audioFile?.name ?? "";
+  const selectedAudioFileSizeLabel = audioFile ? formatFileSize(audioFile.size, language) : "";
 
   async function handleProcess() {
-    if (!transcriptText.trim()) {
+    if (inputMode === "transcript" && !transcriptText.trim()) {
       setRunState("error");
-      setErrorMessage("Paste a meeting transcript or load the fixed demo sample first.");
+      setErrorMessage(copy.emptyUploadPrompt);
+      return;
+    }
+    if (inputMode === "audio" && !audioFile) {
+      setRunState("error");
+      setErrorMessage(copy.emptyAudioUploadPrompt);
       return;
     }
 
@@ -67,7 +90,12 @@ export function DashboardWorkspace() {
     }, 650);
 
     try {
-      const processedResult = await processMeetingTranscript(transcriptText);
+      const processedResult =
+        inputMode === "audio" && audioFile
+          ? await processMeetingAudio(audioFile, {
+              meetingTitle: audioFile.name.replace(/\.[^.]+$/, "") || "Audio Meeting",
+            })
+          : await processMeetingTranscript(transcriptText);
       window.clearInterval(stageTimer);
       setActiveStageIndex(processingStages.length - 1);
 
@@ -80,11 +108,19 @@ export function DashboardWorkspace() {
     } catch (error) {
       window.clearInterval(stageTimer);
       setRunState("error");
-      setErrorMessage(error instanceof Error ? error.message : "Meeting processing failed.");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : language === "zh"
+            ? "组会处理失败。"
+            : "Meeting processing failed."
+      );
     }
   }
 
   function handleLoadDemo() {
+    setInputMode("transcript");
+    setAudioFile(null);
     setTranscriptText(demoTranscript);
     setErrorMessage("");
     if (runState === "error") {
@@ -102,9 +138,29 @@ export function DashboardWorkspace() {
       setErrorMessage("");
     };
     reader.onerror = () => {
-      setErrorMessage("The selected transcript file could not be read.");
+      setErrorMessage(
+        language === "zh"
+          ? "选中的 transcript 文件无法读取。"
+          : "The selected transcript file could not be read."
+      );
     };
     reader.readAsText(file);
+  }
+
+  function handleAudioFileLoad(file: File | null) {
+    setAudioFile(file);
+    setErrorMessage("");
+    if (runState === "error") {
+      setRunState("idle");
+    }
+  }
+
+  function handleInputModeChange(nextMode: MeetingInputMode) {
+    setInputMode(nextMode);
+    setErrorMessage("");
+    if (runState === "error") {
+      setRunState("idle");
+    }
   }
 
   function handleReset() {
@@ -137,7 +193,13 @@ export function DashboardWorkspace() {
         };
       });
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Deliverable refresh failed.");
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : language === "zh"
+            ? "刷新交付物失败。"
+            : "Deliverable refresh failed."
+      );
     }
   }
 
@@ -159,22 +221,40 @@ export function DashboardWorkspace() {
         <div className="brand-panel">
           <div className="brand-mark">EF</div>
           <div>
-            <p className="eyebrow">Research Cockpit</p>
-            <h1>EvidenceFlow Agent</h1>
-            <p className="supporting-copy">Turn a weekly group meeting into next-week execution.</p>
+            <p className="eyebrow">{copy.brandEyebrow}</p>
+            <h1>{copy.brandTitle}</h1>
+            <p className="supporting-copy">{copy.brandSubtitle}</p>
           </div>
         </div>
 
+        <section className="panel language-panel">
+          <p className="eyebrow">{copy.languageLabel}</p>
+          <div className="language-toggle" role="tablist" aria-label={copy.languageLabel}>
+            <button
+              type="button"
+              className={`language-button ${language === "zh" ? "language-button-active" : ""}`}
+              onClick={() => setLanguage("zh")}
+            >
+              中文
+            </button>
+            <button
+              type="button"
+              className={`language-button ${language === "en" ? "language-button-active" : ""}`}
+              onClick={() => setLanguage("en")}
+            >
+              English
+            </button>
+          </div>
+        </section>
+
         <section className="panel">
-          <p className="eyebrow">Active Project</p>
-          <strong className="panel-title">{result?.projectName ?? "EvidenceFlow Demo Project"}</strong>
-          <p className="supporting-copy">
-            Single-workspace MVP for weekly research meetings, briefing prep, and evidence-aware follow-up.
-          </p>
+          <p className="eyebrow">{copy.activeProject}</p>
+          <strong className="panel-title">{result?.projectName ?? copy.defaultProjectName}</strong>
+          <p className="supporting-copy">{copy.projectDescription}</p>
         </section>
 
         <nav className="panel nav-panel" aria-label="Primary navigation">
-          <p className="eyebrow">Navigation</p>
+          <p className="eyebrow">{copy.navigationTitle}</p>
           <ul className="nav-list">
             {navigation.map((item, index) => (
               <li key={item}>
@@ -189,21 +269,20 @@ export function DashboardWorkspace() {
         <section className="panel context-panel">
           <div className="section-inline">
             <div>
-              <p className="eyebrow">Meeting Context</p>
-              <strong className="panel-title">{result?.meetingTitle ?? "Demo Weekly Group Meeting"}</strong>
+              <p className="eyebrow">{copy.meetingContext}</p>
+              <strong className="panel-title">{result?.meetingTitle ?? copy.defaultMeetingName}</strong>
             </div>
             <span className="status-pill status-pill-soft">
-              {result ? result.meetingStatus : "Fixed demo"}
+              {result ? result.meetingStatus : copy.fixedDemo}
             </span>
           </div>
-          <p className="supporting-copy">
-            This sample keeps the product narrative stable: one student update, two advisor ideas, three action items, and one claim that still needs evidence.
-          </p>
+          <p className="supporting-copy">{copy.sampleNarrative}</p>
         </section>
       </aside>
 
       <section className="center-column">
         <MeetingUpload
+          language={language}
           transcriptText={transcriptText}
           runState={runState}
           activeStageIndex={activeStageIndex}
@@ -214,6 +293,12 @@ export function DashboardWorkspace() {
           onLoadDemo={handleLoadDemo}
           onProcess={handleProcess}
           onReset={handleReset}
+          inputMode={inputMode}
+          selectedAudioFileName={selectedAudioFileName}
+          selectedAudioFileSizeLabel={selectedAudioFileSizeLabel}
+          onInputModeChange={handleInputModeChange}
+          onAudioFileLoad={handleAudioFileLoad}
+          onClearAudio={() => setAudioFile(null)}
         />
 
         {isReady && result ? (
@@ -221,31 +306,31 @@ export function DashboardWorkspace() {
             <section className="panel panel-elevated summary-panel">
               <div className="panel-header">
                 <div>
-                  <p className="eyebrow">Meeting Summary</p>
+                  <p className="eyebrow">{copy.meetingSummary}</p>
                   <h2>{result.meetingTitle}</h2>
                   <p className="supporting-copy">
                     {result.meetingDate} / {result.meetingStatus}
                   </p>
                 </div>
-                <span className="status-pill status-pill-brand">Ready for review</span>
+                <span className="status-pill status-pill-brand">{copy.readyForReview}</span>
               </div>
               <p className="summary-copy">{result.summary}</p>
               <div className="summary-stats">
                 <div>
                   <strong>{result.studentProgress.length}</strong>
-                  <span>student view</span>
+                  <span>{copy.studentView}</span>
                 </div>
                 <div>
                   <strong>{result.advisorIdeas.length}</strong>
-                  <span>advisor ideas</span>
+                  <span>{copy.advisorIdeas}</span>
                 </div>
                 <div>
                   <strong>{result.actionItems.length}</strong>
-                  <span>open actions</span>
+                  <span>{copy.openActions}</span>
                 </div>
                 <div>
                   <strong>{result.claims.length}</strong>
-                  <span>evidence claims</span>
+                  <span>{copy.evidenceClaims}</span>
                 </div>
               </div>
             </section>
@@ -253,8 +338,8 @@ export function DashboardWorkspace() {
             <section className="content-section">
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">Progress</p>
-                  <h3>Student Progress</h3>
+                  <p className="eyebrow">{copy.progressTitle}</p>
+                  <h3>{copy.progressTitle}</h3>
                 </div>
               </div>
               <div className="card-grid">
@@ -262,33 +347,33 @@ export function DashboardWorkspace() {
                   <article className="panel progress-card" key={student.studentName}>
                     <div className="section-inline">
                       <div>
-                        <p className="eyebrow">Student</p>
+                        <p className="eyebrow">{copy.studentLabel}</p>
                         <h4>{student.studentName}</h4>
                       </div>
                       <span className={`priority-pill priority-${student.riskLevel}`}>
-                        {formatRiskLabel(student.riskLevel)}
+                        {getRiskLabel(language, student.riskLevel)}
                       </span>
                     </div>
 
                     <dl className="detail-list">
                       <div>
-                        <dt>Completed</dt>
+                        <dt>{copy.completed}</dt>
                         <dd>{student.completedWork.join(" ")}</dd>
                       </div>
                       <div>
-                        <dt>Current Result</dt>
+                        <dt>{copy.currentResult}</dt>
                         <dd>{student.currentResult}</dd>
                       </div>
                       <div>
-                        <dt>Blockers</dt>
+                        <dt>{copy.blockers}</dt>
                         <dd>{student.blockers.join(" ")}</dd>
                       </div>
                       <div>
-                        <dt>Risks</dt>
+                        <dt>{copy.risks}</dt>
                         <dd>{student.risks.join(" ")}</dd>
                       </div>
                       <div>
-                        <dt>Next Step</dt>
+                        <dt>{copy.nextStep}</dt>
                         <dd>{student.nextStep}</dd>
                       </div>
                     </dl>
@@ -300,8 +385,8 @@ export function DashboardWorkspace() {
             <section className="content-section">
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">Advisor Signals</p>
-                  <h3>New Ideas</h3>
+                  <p className="eyebrow">{copy.advisorSignals}</p>
+                  <h3>{copy.newIdeas}</h3>
                 </div>
               </div>
               <div className="idea-stack">
@@ -319,28 +404,28 @@ export function DashboardWorkspace() {
                           setActiveClaimId(result.claims[0]?.id ?? null);
                         }}
                       >
-                        Add to plan
+                        {copy.addToPlan}
                       </button>
                     </div>
                     <dl className="detail-list">
                       <div>
-                        <dt>Summary</dt>
+                        <dt>{copy.summary}</dt>
                         <dd>{idea.summary}</dd>
                       </div>
                       <div>
-                        <dt>Suggested Experiment</dt>
+                        <dt>{copy.suggestedExperiment}</dt>
                         <dd>{idea.suggestedExperiment}</dd>
                       </div>
                       <div>
-                        <dt>Validation Metrics</dt>
+                        <dt>{copy.validationMetrics}</dt>
                         <dd>{idea.validationMetrics.join(", ")}</dd>
                       </div>
                       <div>
-                        <dt>Recommended Reading</dt>
+                        <dt>{copy.recommendedReading}</dt>
                         <dd>{idea.recommendedReading.join(", ")}</dd>
                       </div>
                       <div>
-                        <dt>Evidence Status</dt>
+                        <dt>{copy.evidenceStatus}</dt>
                         <dd>{idea.evidenceStatus}</dd>
                       </div>
                     </dl>
@@ -352,10 +437,10 @@ export function DashboardWorkspace() {
             <section className="content-section">
               <div className="section-header">
                 <div>
-                  <p className="eyebrow">Traceability</p>
-                  <h3>Transcript Timeline</h3>
+                  <p className="eyebrow">{copy.traceability}</p>
+                  <h3>{copy.transcriptTimeline}</h3>
                 </div>
-                <span className="section-note">Click a claim in the evidence panel to highlight source chunks.</span>
+                <span className="section-note">{copy.transcriptHint}</span>
               </div>
               <ol className="timeline-list">
                 {result.transcriptTimeline.map((entry) => (
@@ -391,29 +476,30 @@ export function DashboardWorkspace() {
           </section>
         ) : (
           <section className="panel empty-result-panel">
-            <p className="eyebrow">Review State</p>
-            <h2>Upload a meeting transcript to generate the first research plan.</h2>
-            <p className="supporting-copy">
-              The dashboard keeps planning and reading visually primary, with evidence visible but secondary.
-            </p>
+            <p className="eyebrow">{copy.reviewState}</p>
+            <h2>{copy.emptyReviewTitle}</h2>
+            <p className="supporting-copy">{copy.emptyReviewBody}</p>
           </section>
         )}
       </section>
 
       <aside className="right-column">
         <ActionItemsPanel
+          language={language}
           actionItems={result?.actionItems ?? []}
           readingList={result?.readingList ?? []}
           agenda={result?.briefing.recommendedAgenda ?? []}
           isReady={isReady}
         />
         <EvidencePanel
+          language={language}
           claims={result?.claims ?? []}
           activeClaimId={activeClaim?.id ?? null}
           isReady={isReady}
           onSelectClaim={setActiveClaimId}
         />
         <BriefingPanel
+          language={language}
           briefing={
             result?.briefing ?? {
               summary: "",

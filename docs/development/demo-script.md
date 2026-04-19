@@ -7,7 +7,16 @@ Show a stable 5-minute flow from transcript import to research execution outputs
 ## Demo Assets
 
 - Transcript: `data/samples/demo_meeting_transcript.md`
+- Audio: `data/samples/demo_meeting_audio.wav`
 - Expected structure: `data/samples/demo_expected_output.md`
+
+## Demo Setup
+
+- Ensure the backend environment already has local audio dependencies installed:
+  - `python-multipart`
+  - `faster-whisper`
+- For a faster live demo on CPU, set `FASTER_WHISPER_MODEL_SIZE=tiny.en` before starting the backend.
+- Warm up the audio path once before presenting if the model has not been downloaded yet, otherwise the first run will spend extra time downloading and loading the Whisper model.
 
 ## Demo Flow
 
@@ -30,6 +39,20 @@ Show a stable 5-minute flow from transcript import to research execution outputs
   - idea capture
   - evidence retrieval
   - plan generation
+
+### 2A. Show the Audio Import Path
+
+- Switch the meeting input mode from `Transcript` to `Audio`.
+- Select `data/samples/demo_meeting_audio.wav`.
+- Start processing again and point out that the UI now shows the longer audio-specific chain:
+  - audio upload
+  - local transcription
+  - transcript parsing
+  - progress extraction
+  - idea capture
+  - evidence retrieval
+  - plan generation
+- Mention that the original audio, generated transcript, parsed chunks, and transcription metadata all stay in local storage.
 
 ### 3. Review the Main Outputs
 
@@ -68,7 +91,9 @@ Show a stable 5-minute flow from transcript import to research execution outputs
 ## Validation Checklist
 
 - The transcript loads without manual editing.
+- The audio sample imports without needing a filesystem `audio_path` in the browser.
 - The processing states appear in order.
+- The audio flow shows `audio upload`, `local transcription`, and `transcript parsing` before the downstream agent stages.
 - Student progress, advisor ideas, and action items all render.
 - At least one evidence-sensitive claim is visible.
 - Markdown deliverables are non-empty and readable.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.schemas.action_item import ActionItem
@@ -128,6 +128,28 @@ async def import_meeting(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except TranscriptionServiceError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/import-audio", response_model=MeetingImportResponse, status_code=status.HTTP_201_CREATED)
+async def import_audio_meeting(
+    transcription_service: Annotated[TranscriptionService, Depends(get_transcription_service)],
+    file: Annotated[UploadFile, File(...)],
+    meeting_title: Annotated[str | None, Form()] = None,
+    language_hint: Annotated[str | None, Form()] = None,
+) -> MeetingImportResponse:
+    try:
+        file_bytes = await file.read()
+        return transcription_service.import_uploaded_audio(
+            file_bytes=file_bytes,
+            filename=file.filename or "",
+            content_type=file.content_type,
+            meeting_title=meeting_title,
+            language_hint=language_hint,
+        )
+    except TranscriptionServiceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    finally:
+        await file.close()
 
 
 @router.post("/{meeting_id}/review", response_model=MeetingReviewResponse)

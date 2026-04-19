@@ -2,6 +2,7 @@ export type RiskLevel = "low" | "medium" | "high";
 export type TaskPriority = "low" | "medium" | "high";
 export type EvidenceStance = "support" | "contradict" | "needs verification";
 export type EvidenceConfidence = "low" | "medium" | "high";
+export type DashboardLanguage = "zh" | "en";
 export type DeliverableKey =
   | "weekly-report"
   | "next-meeting-briefing"

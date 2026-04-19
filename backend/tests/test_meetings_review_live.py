@@ -1,14 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import time
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from starlette.datastructures import Headers, UploadFile
 
-from backend.api.meetings import MeetingReviewRequest, import_meeting, review_meeting
+from backend.api.meetings import (
+    MeetingReviewRequest,
+    import_audio_meeting,
+    import_meeting,
+    review_meeting,
+)
 from backend.config import load_settings
 from backend.schemas.meeting import MeetingImportRequest
 from backend.services.briefing_service import BriefingService
@@ -51,6 +59,16 @@ def load_live_settings_or_skip():
     if not settings.deepseek_api_key:
         pytest.skip("DEEPSEEK_API_KEY is not configured.")
     return settings, workspace
+
+
+def make_audio_upload_file(audio_path: Path) -> UploadFile:
+    suffix = audio_path.suffix.lower()
+    content_type = "audio/wav" if suffix == ".wav" else "application/octet-stream"
+    return UploadFile(
+        file=BytesIO(audio_path.read_bytes()),
+        filename=audio_path.name,
+        headers=Headers({"content-type": content_type}),
+    )
 
 
 def test_live_review_meeting_pipeline_with_deepseek() -> None:
@@ -119,4 +137,84 @@ def test_live_review_meeting_pipeline_with_deepseek() -> None:
 
         asyncio.run(run_flow())
     finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def test_live_audio_review_pipeline_with_deepseek() -> None:
+    settings, workspace = load_live_settings_or_skip()
+    sample_audio_path = Path("data/samples/demo_meeting_audio.wav")
+    if not sample_audio_path.exists():
+        pytest.skip("Audio sample is required for the audio live review test.")
+
+    original_model_size = os.environ.get("FASTER_WHISPER_MODEL_SIZE")
+    os.environ["FASTER_WHISPER_MODEL_SIZE"] = original_model_size or "tiny.en"
+    try:
+        transcription_service = TranscriptionService(settings=settings)
+        progress_service = ProgressExtractionService()
+        idea_service = IdeaCaptureService()
+        research_plan_service = ResearchPlanService()
+        reading_service = ReadingRecommendationService()
+        claim_extraction_service = ClaimExtractionService()
+        claim_verification_service = ClaimVerificationService(
+            retrieval_service=EvidenceRetrievalService()
+        )
+        project_memory_service = ProjectMemoryService(settings=settings)
+        briefing_service = BriefingService()
+        deliverable_service = DeliverableService()
+
+        async def run_flow():
+            imported = await import_audio_meeting(
+                transcription_service=transcription_service,
+                file=make_audio_upload_file(sample_audio_path),
+                meeting_title="Live Audio Review Meeting",
+                language_hint="en",
+            )
+
+            started_at = time.time()
+            reviewed = await review_meeting(
+                imported.meeting.meeting_id,
+                MeetingReviewRequest(
+                    project_id="live-audio-project",
+                    project_name="Live Audio Project",
+                    verify_claims=False,
+                    max_claims_to_verify=0,
+                ),
+                transcription_service=transcription_service,
+                progress_service=progress_service,
+                idea_capture_service=idea_service,
+                research_plan_service=research_plan_service,
+                reading_service=reading_service,
+                claim_extraction_service=claim_extraction_service,
+                claim_verification_service=claim_verification_service,
+                project_memory_service=project_memory_service,
+                briefing_service=briefing_service,
+                deliverable_service=deliverable_service,
+            )
+            elapsed_seconds = time.time() - started_at
+
+            print(f"live_audio_review_elapsed_seconds={elapsed_seconds:.2f}")
+            print(f"live_audio_transcript_chunk_count={reviewed.transcript.chunk_count}")
+            print(f"live_audio_progress_summary={reviewed.progress.summary}")
+            print(f"live_audio_idea_count={len(reviewed.ideas.ideas)}")
+            print(f"live_audio_task_count={len(reviewed.research_plan.tasks)}")
+            print(f"live_audio_reading_count={len(reviewed.reading_recommendations.recommendations)}")
+            print(f"live_audio_deliverable_count={len(reviewed.deliverables)}")
+
+            assert reviewed.project.project_id == "live-audio-project"
+            assert reviewed.meeting.source_type == "audio"
+            assert reviewed.meeting.status == "processed"
+            assert reviewed.meeting.transcription_status == "completed"
+            assert reviewed.transcript.chunks
+            assert reviewed.progress.student_progress
+            assert reviewed.ideas.ideas
+            assert reviewed.research_plan.tasks
+            assert reviewed.reading_recommendations.recommendations
+            assert reviewed.deliverables
+
+        asyncio.run(run_flow())
+    finally:
+        if original_model_size is None:
+            os.environ.pop("FASTER_WHISPER_MODEL_SIZE", None)
+        else:
+            os.environ["FASTER_WHISPER_MODEL_SIZE"] = original_model_size
         shutil.rmtree(workspace, ignore_errors=True)

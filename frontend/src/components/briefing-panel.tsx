@@ -1,12 +1,15 @@
 "use client";
 
+import { dashboardCopy, getDeliverableLabel } from "./dashboard-copy";
 import type {
   BriefingData,
+  DashboardLanguage,
   DeliverableKey,
   DeliverablePreview,
 } from "./dashboard-types";
 
 type BriefingPanelProps = {
+  language: DashboardLanguage;
   briefing: BriefingData;
   deliverables: DeliverablePreview[];
   selectedDeliverableKey: DeliverableKey | null;
@@ -16,6 +19,7 @@ type BriefingPanelProps = {
 };
 
 export function BriefingPanel({
+  language,
   briefing,
   deliverables,
   selectedDeliverableKey,
@@ -23,6 +27,7 @@ export function BriefingPanel({
   onSelectDeliverable,
   onExportDeliverable,
 }: BriefingPanelProps) {
+  const copy = dashboardCopy[language];
   const selectedDeliverable =
     deliverables.find((item) => item.key === selectedDeliverableKey) ?? deliverables[0] ?? null;
 
@@ -30,15 +35,15 @@ export function BriefingPanel({
     <section className="panel">
       <div className="panel-header compact-header">
         <div>
-          <p className="eyebrow">Briefing</p>
-          <h3>Delivery Artifacts</h3>
+          <p className="eyebrow">{copy.briefing}</p>
+          <h3>{copy.deliveryArtifacts}</h3>
         </div>
-        <span className="status-pill status-pill-brand">Markdown-ready</span>
+        <span className="status-pill status-pill-brand">{copy.markdownReady}</span>
       </div>
 
       {!isReady ? (
         <div className="empty-panel">
-          <p>Once the meeting is processed, this panel exposes briefing items and exportable Markdown.</p>
+          <p>{copy.briefingEmpty}</p>
         </div>
       ) : (
         <>
@@ -46,8 +51,8 @@ export function BriefingPanel({
 
           <div className="subsection">
             <div className="subsection-header">
-              <p className="eyebrow">Focus Questions</p>
-              <h4>What the advisor should press on</h4>
+              <p className="eyebrow">{copy.focusQuestions}</p>
+              <h4>{copy.advisorFocus}</h4>
             </div>
             <ul className="agenda-list">
               {briefing.focusQuestions.map((question) => (
@@ -58,7 +63,7 @@ export function BriefingPanel({
             </ul>
           </div>
 
-          <div className="deliverable-tabs" role="tablist" aria-label="Deliverables">
+          <div className="deliverable-tabs" role="tablist" aria-label={copy.deliverablesAria}>
             {deliverables.map((deliverable) => (
               <button
                 key={deliverable.key}
@@ -70,7 +75,7 @@ export function BriefingPanel({
                 }`}
                 onClick={() => onSelectDeliverable(deliverable.key)}
               >
-                {deliverable.label}
+                {getDeliverableLabel(language, deliverable.key)}
               </button>
             ))}
           </div>
@@ -84,7 +89,7 @@ export function BriefingPanel({
                   type="button"
                   onClick={() => onExportDeliverable(selectedDeliverable)}
                 >
-                  Export Markdown
+                  {copy.exportMarkdown}
                 </button>
               </div>
               <pre>{selectedDeliverable.content}</pre>

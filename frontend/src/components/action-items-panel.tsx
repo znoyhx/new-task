@@ -1,10 +1,13 @@
 import type {
   ActionItemData,
   BriefingAgendaItemData,
+  DashboardLanguage,
   ReadingItemData,
 } from "./dashboard-types";
+import { dashboardCopy, getPriorityText, getStatusText } from "./dashboard-copy";
 
 type ActionItemsPanelProps = {
+  language: DashboardLanguage;
   actionItems: ActionItemData[];
   readingList: ReadingItemData[];
   agenda: BriefingAgendaItemData[];
@@ -12,35 +15,38 @@ type ActionItemsPanelProps = {
 };
 
 export function ActionItemsPanel({
+  language,
   actionItems,
   readingList,
   agenda,
   isReady,
 }: ActionItemsPanelProps) {
+  const copy = dashboardCopy[language];
+
   if (!isReady) {
     return (
-      <section className="panel sticky-card">
+      <section className="panel">
         <div className="panel-header compact-header">
           <div>
-            <p className="eyebrow">Execution</p>
-            <h3>Next-Week Plan</h3>
+            <p className="eyebrow">{copy.execution}</p>
+            <h3>{copy.nextWeekPlan}</h3>
           </div>
         </div>
         <div className="empty-panel">
-          <p>Upload a meeting transcript to generate the first research plan.</p>
+          <p>{copy.emptyUploadPrompt}</p>
         </div>
       </section>
     );
   }
 
   return (
-    <section className="panel sticky-card">
+    <section className="panel">
       <div className="panel-header compact-header">
         <div>
-          <p className="eyebrow">Execution</p>
-          <h3>Next-Week Plan</h3>
+          <p className="eyebrow">{copy.execution}</p>
+          <h3>{copy.nextWeekPlan}</h3>
         </div>
-        <span className="status-pill status-pill-brand">Action-ready</span>
+        <span className="status-pill status-pill-brand">{copy.actionReady}</span>
       </div>
 
       <ul className="task-list">
@@ -48,14 +54,16 @@ export function ActionItemsPanel({
           <li className="task-card" key={item.id}>
             <div className="task-card-top">
               <strong>{item.title}</strong>
-              <span className={`priority-pill priority-${item.priority}`}>{item.priority}</span>
+              <span className={`priority-pill priority-${item.priority}`}>
+                {getPriorityText(language, item.priority)}
+              </span>
             </div>
             <p className="task-meta">
-              {item.owner} / due {item.dueDate} / {item.status}
+              {item.owner} / {copy.due} {item.dueDate} / {getStatusText(language, item.status)}
             </p>
             <p className="task-rationale">{item.rationale}</p>
             <details className="task-details">
-              <summary>Why this task exists</summary>
+              <summary>{copy.whyTaskExists}</summary>
               <p>{item.sourceLabel}</p>
               <ul className="metric-list">
                 {item.successMetrics.map((metric) => (
@@ -69,8 +77,8 @@ export function ActionItemsPanel({
 
       <div className="subsection">
         <div className="subsection-header">
-          <p className="eyebrow">Reading</p>
-          <h4>Recommended Reading</h4>
+          <p className="eyebrow">{copy.reading}</p>
+          <h4>{copy.recommendedReading}</h4>
         </div>
         <ul className="reading-list">
           {readingList.map((item) => (
@@ -79,7 +87,9 @@ export function ActionItemsPanel({
                 <strong>{item.title}</strong>
                 <p>{item.reason}</p>
               </div>
-              <span className={`priority-pill priority-${item.priority}`}>{item.priority}</span>
+              <span className={`priority-pill priority-${item.priority}`}>
+                {getPriorityText(language, item.priority)}
+              </span>
             </li>
           ))}
         </ul>
@@ -87,8 +97,8 @@ export function ActionItemsPanel({
 
       <div className="subsection">
         <div className="subsection-header">
-          <p className="eyebrow">Agenda</p>
-          <h4>Recommended Agenda</h4>
+          <p className="eyebrow">{copy.agenda}</p>
+          <h4>{copy.recommendedAgenda}</h4>
         </div>
         <ul className="agenda-list">
           {agenda.map((item) => (
