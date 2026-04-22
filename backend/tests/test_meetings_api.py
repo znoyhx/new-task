@@ -32,8 +32,9 @@ from backend.schemas.project_memory import (
 from backend.schemas.reading_recommendation import ReadingRecommendationBatch
 from backend.schemas.research_idea import AdvisorIdeaCaptureResult, ResearchIdea
 from backend.schemas.student_progress import MeetingProgressSnapshot, StudentProgress
-from backend.services.briefing_service import BriefingResult
-from backend.services.deliverable_service import DeliverableBundle, DeliverableDocument
+from backend.services.briefing_service import BriefingResult, BriefingService
+from backend.services.deliverable_service import DeliverableBundle, DeliverableDocument, DeliverableService
+from backend.services.project_memory_service import ProjectMemoryService
 from backend.services.research_plan_service import ResearchPlanResult, ResearchPlanTask
 from backend.services.transcription_service import TranscriptionService
 
@@ -162,6 +163,150 @@ class FakeReadingRecommendationService:
         )
 
 
+class ContinuityProgressExtractionService:
+    def extract_progress(
+        self,
+        transcript: ParsedTranscript,
+        *,
+        meeting_id: str | None = None,
+    ) -> MeetingProgressSnapshot:
+        resolved_meeting_id = meeting_id or transcript.meeting_id or "missing-meeting-id"
+        transcript_text = " ".join(chunk.text.lower() for chunk in transcript.chunks)
+        if "still open" in transcript_text:
+            summary = "The previous ablation task is still open and must be carried into next week."
+            current_result = "The first rerun finished, but the final ablation table is still incomplete."
+            blockers = ["The follow-up ablation is still open."]
+            unresolved_questions = ["What metric change is stable across seeds?"]
+        else:
+            summary = "The initial ablation request is now tracked as next week's main task."
+            current_result = "Baseline rerun is ready, but the controlled ablation is not done yet."
+            blockers = ["Need one clean follow-up ablation."]
+            unresolved_questions = ["Will the improvement hold after one more run?"]
+
+        return MeetingProgressSnapshot(
+            meeting_id=resolved_meeting_id,
+            summary=summary,
+            student_progress=[
+                StudentProgress(
+                    meeting_id=resolved_meeting_id,
+                    student_name="Alice",
+                    completed_work=["Finished the baseline rerun."],
+                    current_result=current_result,
+                    blockers=blockers,
+                    unresolved_questions=unresolved_questions,
+                )
+            ],
+        )
+
+
+class ContinuityIdeaCaptureService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def capture_ideas(
+        self,
+        transcript: ParsedTranscript,
+        *,
+        meeting_id: str | None = None,
+    ) -> AdvisorIdeaCaptureResult:
+        self.calls += 1
+        resolved_meeting_id = meeting_id or transcript.meeting_id or "missing-meeting-id"
+        if self.calls == 1:
+            idea_text = "Run the follow-up ablation and capture the final table."
+            expected_validation = "Confirm the baseline result survives one more controlled ablation."
+        else:
+            idea_text = "Close the follow-up ablation and explicitly carry unresolved work into briefing."
+            expected_validation = "Show whether the carryover task can be closed in the next meeting."
+
+        return AdvisorIdeaCaptureResult(
+            meeting_id=resolved_meeting_id,
+            summary="One continuity-oriented advisor idea is active.",
+            ideas=[
+                ResearchIdea(
+                    id=f"{resolved_meeting_id}-idea-01",
+                    meeting_id=resolved_meeting_id,
+                    student_name="Alice",
+                    idea_text=idea_text,
+                    suggested_by="Prof. Chen",
+                    expected_validation=expected_validation,
+                    validation_metrics=["macro F1"],
+                )
+            ],
+        )
+
+
+class ContinuityResearchPlanService:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_plan(
+        self,
+        transcript: ParsedTranscript,
+        ideas: list[ResearchIdea],
+        *,
+        progress: MeetingProgressSnapshot | None = None,
+        meeting_id: str | None = None,
+    ) -> ResearchPlanResult:
+        _ = (transcript, progress)
+        self.calls += 1
+        resolved_meeting_id = meeting_id or "missing-meeting-id"
+        due_date = "Friday" if self.calls == 1 else "Tuesday"
+        rationale = (
+            "Advisor requested a controlled follow-up ablation."
+            if self.calls == 1
+            else "The same ablation is still unresolved, so it must be carried into the next execution cycle."
+        )
+
+        return ResearchPlanResult(
+            meeting_id=resolved_meeting_id,
+            summary="One continuity-critical task was generated.",
+            tasks=[
+                ResearchPlanTask(
+                    meeting_id=resolved_meeting_id,
+                    idea_id=ideas[0].id or "unknown",
+                    student_name="Alice",
+                    title="Run the follow-up ablation",
+                    owner="Alice",
+                    due_date=due_date,
+                    priority="high",
+                    success_metrics=["macro F1 stable across seeds"],
+                    dependency_note="Requires one more clean experiment run.",
+                    rationale=rationale,
+                )
+            ],
+            questions_to_answer=["Is the carryover task finally closed?"],
+        )
+
+
+class ContinuityReadingRecommendationService:
+    def generate_recommendations(
+        self,
+        transcript: ParsedTranscript,
+        ideas: list[ResearchIdea],
+        *,
+        progress: MeetingProgressSnapshot | None = None,
+        meeting_id: str | None = None,
+    ) -> ReadingRecommendationBatch:
+        _ = (transcript, progress)
+        resolved_meeting_id = meeting_id or "missing-meeting-id"
+        return ReadingRecommendationBatch(
+            meeting_id=resolved_meeting_id,
+            summary="One reading keeps the carryover task grounded.",
+            recommendations=[
+                {
+                    "id": f"{resolved_meeting_id}-reading-01",
+                    "meeting_id": resolved_meeting_id,
+                    "idea_id": ideas[0].id,
+                    "student_name": "Alice",
+                    "title": "Ablation Reporting Checklist",
+                    "source_url": "https://example.org/ablation-checklist",
+                    "reason": "Helps Alice close the follow-up ablation cleanly.",
+                    "priority": "high",
+                }
+            ],
+        )
+
+
 class FakeClaimExtractionService:
     def extract_claims(
         self,
@@ -208,15 +353,31 @@ class FakeClaimVerificationService:
 
 
 class FakeProjectMemoryService:
-    def remember_meeting(self, project: ProjectRecord, meeting: ProjectMeetingRecord, **_: object) -> ProjectMemorySnapshot:
+    def load_project_memory(self, project_id: str, *, query: str | None = None, limit: int = 5) -> ProjectMemorySnapshot:
+        _ = (project_id, query, limit)
         return ProjectMemorySnapshot(
-            project=project,
-            meetings=[meeting],
+            project=None,
+            meetings=[],
+            decisions=[],
             action_items=[],
             claims=[],
             advisor_ideas=[],
             student_progress=[],
             key_papers=[],
+            relevant_context=[],
+        )
+
+    def remember_meeting(self, project: ProjectRecord, meeting: ProjectMeetingRecord, **_: object) -> ProjectMemorySnapshot:
+        return ProjectMemorySnapshot(
+            project=project,
+            meetings=[meeting],
+            decisions=[],
+            action_items=[],
+            claims=[],
+            advisor_ideas=[],
+            student_progress=[],
+            key_papers=[],
+            relevant_context=[],
         )
 
 
@@ -379,6 +540,131 @@ def test_review_meeting_aggregates_pipeline_outputs() -> None:
             assert reviewed.claims[0].verdict == "supported"
             assert reviewed.briefing.summary == "Fake briefing summary."
             assert reviewed.deliverables[0].deliverable_type == "weekly_report"
+            assert reviewed.orchestration.stages
+            assert reviewed.explanations.action_items[0].title == "Run the follow-up ablation"
+            assert reviewed.explanations.claims[0].trigger_reason
+
+        asyncio.run(run_flow())
+    finally:
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+
+def test_review_meeting_reuses_prior_memory_and_surfaces_carryover_outputs() -> None:
+    data_dir = make_workspace_temp_dir()
+    try:
+        settings = load_settings(
+            env={
+                "DATA_DIR": str(data_dir),
+                "SQLITE_PATH": str(data_dir / "continuity.sqlite3"),
+                "LANCEDB_PATH": str(data_dir / "lancedb"),
+            },
+            repo_root=Path.cwd(),
+            dotenv_path=Path.cwd() / "missing.env",
+        )
+        transcription_service = TranscriptionService(settings=settings)
+        project_memory_service = ProjectMemoryService(settings=settings)
+        progress_service = ContinuityProgressExtractionService()
+        idea_service = ContinuityIdeaCaptureService()
+        research_plan_service = ContinuityResearchPlanService()
+        reading_service = ContinuityReadingRecommendationService()
+        briefing_service = BriefingService()
+        deliverable_service = DeliverableService()
+
+        async def run_flow() -> None:
+            imported_a = await import_meeting(
+                MeetingImportRequest(
+                    meeting_title="Meeting A",
+                    source_type="transcript",
+                    transcript_text=(
+                        "[00:00:01] Alice: I finished the baseline rerun.\n"
+                        "[00:00:09] Prof. Chen: Run the follow-up ablation and capture the final table."
+                    ),
+                ),
+                transcription_service=transcription_service,
+            )
+
+            reviewed_a = await review_meeting(
+                imported_a.meeting.meeting_id,
+                MeetingReviewRequest(
+                    project_id="continuity-project",
+                    project_name="Continuity Project",
+                    verify_claims=False,
+                    max_claims_to_verify=0,
+                ),
+                transcription_service=transcription_service,
+                progress_service=progress_service,
+                idea_capture_service=idea_service,
+                research_plan_service=research_plan_service,
+                reading_service=reading_service,
+                claim_extraction_service=FakeClaimExtractionService(),
+                claim_verification_service=FakeClaimVerificationService(),
+                project_memory_service=project_memory_service,
+                briefing_service=briefing_service,
+                deliverable_service=deliverable_service,
+            )
+
+            imported_b = await import_meeting(
+                MeetingImportRequest(
+                    meeting_title="Meeting B",
+                    source_type="transcript",
+                    transcript_text=(
+                        "[00:00:01] Alice: The follow-up ablation is still open, but I have one partial table.\n"
+                        "[00:00:10] Prof. Chen: Close the same follow-up ablation and carry the unresolved work into briefing."
+                    ),
+                ),
+                transcription_service=transcription_service,
+            )
+
+            reviewed_b = await review_meeting(
+                imported_b.meeting.meeting_id,
+                MeetingReviewRequest(
+                    project_id="continuity-project",
+                    project_name="Continuity Project",
+                    verify_claims=False,
+                    max_claims_to_verify=0,
+                ),
+                transcription_service=transcription_service,
+                progress_service=progress_service,
+                idea_capture_service=idea_service,
+                research_plan_service=research_plan_service,
+                reading_service=reading_service,
+                claim_extraction_service=FakeClaimExtractionService(),
+                claim_verification_service=FakeClaimVerificationService(),
+                project_memory_service=project_memory_service,
+                briefing_service=briefing_service,
+                deliverable_service=deliverable_service,
+            )
+
+            weekly_report = next(
+                document
+                for document in reviewed_b.deliverables
+                if document.deliverable_type == "weekly_report"
+            )
+            next_week_plan = next(
+                document
+                for document in reviewed_b.deliverables
+                if document.deliverable_type == "next_week_research_plan"
+            )
+
+            assert reviewed_a.orchestration.memory_usage is not None
+            assert reviewed_a.orchestration.memory_usage.prior_meeting_count == 0
+            assert reviewed_b.orchestration.memory_usage is not None
+            assert reviewed_b.orchestration.memory_usage.prior_meeting_count >= 1
+            assert reviewed_b.orchestration.memory_usage.open_task_count >= 1
+            assert reviewed_b.explanations.action_items
+            assert reviewed_b.explanations.action_items[0].carryover is True
+            assert any(
+                attribution.origin_layer == "history_memory"
+                for attribution in reviewed_b.explanations.action_items[0].attributions
+            )
+            assert reviewed_b.briefing.carryover_tasks
+            assert any(
+                item.origin_layer == "history_memory"
+                for item in reviewed_b.explanations.briefing_items
+            )
+            assert "## Carryover From Earlier Meetings" in weekly_report.content_markdown
+            assert "Run the follow-up ablation" in weekly_report.content_markdown
+            assert "## Carryover Tasks" in next_week_plan.content_markdown
 
         asyncio.run(run_flow())
     finally:

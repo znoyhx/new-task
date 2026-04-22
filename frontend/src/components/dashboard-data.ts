@@ -1,7 +1,4 @@
-import type {
-  DashboardResultData,
-  ProcessingStage,
-} from "./dashboard-types";
+import type { DashboardResultData, ProcessingStage } from "./dashboard-types";
 
 export const navigation = [
   "Dashboard",
@@ -17,26 +14,51 @@ export const processingStages: ProcessingStage[] = [
     key: "parse",
     label: "Transcript parsing",
     description: "Normalizing speakers, timestamps, and chunk boundaries.",
+    agentName: "Controller Agent",
+    agentGoal: "Confirm the imported transcript is ready for downstream planning.",
+    inputSource: "Imported transcript",
+    outputTarget: "Normalized transcript chunks",
+    fallback: "Stop the run and keep the original import available for review.",
   },
   {
     key: "progress",
     label: "Progress extraction",
     description: "Pulling out completed work, current result, blockers, and risks.",
+    agentName: "Execution Driver Agent",
+    agentGoal: "Recover the student progress structure behind the meeting.",
+    inputSource: "Normalized transcript",
+    outputTarget: "Structured progress and blockers",
+    fallback: "Stop planning if progress extraction cannot be trusted.",
   },
   {
     key: "ideas",
     label: "Idea capture",
     description: "Converting advisor suggestions into structured research ideas.",
+    agentName: "Execution Driver Agent",
+    agentGoal: "Identify advisor guidance that should drive next week.",
+    inputSource: "Current meeting transcript",
+    outputTarget: "Advisor ideas and validation goals",
+    fallback: "Do not fabricate a plan if advisor ideas cannot be grounded.",
   },
   {
     key: "evidence",
     label: "Evidence retrieval",
     description: "Marking evidence-sensitive claims and surfacing reference cards.",
+    agentName: "Evidence Hunter Agent",
+    agentGoal: "Check only the claims that matter for the next execution step.",
+    inputSource: "High-value claim candidates",
+    outputTarget: "Evidence cards and unresolved gaps",
+    fallback: "Keep the claim visible as unresolved without blocking execution.",
   },
   {
     key: "plan",
     label: "Plan generation",
     description: "Producing next-week actions, briefing items, and export-ready deliverables.",
+    agentName: "Execution Driver Agent",
+    agentGoal: "Push the meeting into next-week execution and exports.",
+    inputSource: "Progress, ideas, and memory",
+    outputTarget: "Plan, reading, briefing, and deliverables",
+    fallback: "Fall back to advisor-linked next actions if the main plan fails.",
   },
 ];
 
@@ -107,9 +129,7 @@ export const demoDashboardResult: DashboardResultData = {
         "The workflow should keep every exported action item attached to one transcript slice so the advisor can jump straight to source context.",
       suggestedExperiment:
         "Instrument retrieval-assisted logging on the failing long-context run and confirm every task keeps one trace anchor.",
-      recommendedReading: [
-        "Grounded Meeting Agents With Retrieval Traces",
-      ],
+      recommendedReading: ["Grounded Meeting Agents With Retrieval Traces"],
       validationMetrics: ["trace coverage"],
       evidenceStatus: "Helpful for demo credibility",
       sourceChunkIds: ["chunk-0005"],
@@ -117,7 +137,8 @@ export const demoDashboardResult: DashboardResultData = {
   ],
   actionItems: [
     {
-      id: "task-001",
+      id: "prepare-the-hard-negative-curriculum-ablation-table::alice",
+      meetingId: "demo-meeting-001",
       title: "Prepare the hard-negative curriculum ablation table",
       owner: "Alice",
       dueDate: "Friday",
@@ -126,22 +147,46 @@ export const demoDashboardResult: DashboardResultData = {
       successMetrics: ["macro F1", "calibration error"],
       rationale:
         "This is the fastest path to validate the advisor's main request for next week.",
-      sourceLabel: "Derived from advisor idea + current blocker",
+      sourceLabel: "Keep the hard-negative ablation in next week's plan",
+      outputSummary: "Grounded in the advisor request and Alice's current blocker.",
+      carryover: false,
+      attributions: [
+        {
+          sourceType: "advisor_idea",
+          originLayer: "current_transcript",
+          label: "Keep the hard-negative ablation in next week's plan",
+          detail: "Advisor request that defines the primary validation target.",
+          chunkIds: ["chunk-0004"],
+        },
+      ],
     },
     {
-      id: "task-002",
+      id: "instrument-retrieval-assisted-logging-for-transcript-traceability::bob",
+      meetingId: "demo-meeting-001",
       title: "Instrument retrieval-assisted logging for transcript traceability",
       owner: "Bob",
       dueDate: "Tuesday",
       priority: "medium",
-      status: "in progress",
+      status: "in_progress",
       successMetrics: ["trace coverage"],
       rationale:
         "The dashboard demo depends on showing an action item that can jump back to a transcript slice.",
-      sourceLabel: "Derived from advisor idea",
+      sourceLabel: "Test retrieval-assisted logging for transcript traceability",
+      outputSummary: "Derived from the advisor push for transcript traceability.",
+      carryover: false,
+      attributions: [
+        {
+          sourceType: "advisor_idea",
+          originLayer: "current_transcript",
+          label: "Test retrieval-assisted logging for transcript traceability",
+          detail: "Advisor idea that turns traceability into a concrete engineering task.",
+          chunkIds: ["chunk-0005"],
+        },
+      ],
     },
     {
-      id: "task-003",
+      id: "share-the-failing-traces-with-bob::alice",
+      meetingId: "demo-meeting-001",
       title: "Share the failing traces with Bob",
       owner: "Alice",
       dueDate: "Monday",
@@ -150,7 +195,18 @@ export const demoDashboardResult: DashboardResultData = {
       successMetrics: ["trace bundle delivered"],
       rationale:
         "Bob cannot finish the logging fix until Alice passes over the failing traces.",
-      sourceLabel: "Derived from discussion follow-up",
+      sourceLabel: "Bob can help instrument the logging pipeline if Alice shares the failing traces.",
+      outputSummary: "Support task needed to unblock the traceability experiment.",
+      carryover: false,
+      attributions: [
+        {
+          sourceType: "meeting_chunk",
+          originLayer: "current_transcript",
+          label: "Bob can help instrument the logging pipeline if Alice shares the failing traces.",
+          detail: "This follow-up came directly from the student discussion.",
+          chunkIds: ["chunk-0007"],
+        },
+      ],
     },
   ],
   readingList: [
@@ -162,6 +218,16 @@ export const demoDashboardResult: DashboardResultData = {
       priority: "high",
       sourceUrl: "https://example.org/curriculum",
       studentName: "Alice",
+      outputSummary: "Supports the hard-negative ablation that the advisor wants next week.",
+      attributions: [
+        {
+          sourceType: "advisor_idea",
+          originLayer: "current_transcript",
+          label: "Keep the hard-negative ablation in next week's plan",
+          detail: "This reading is tied to the primary validation idea.",
+          chunkIds: ["chunk-0004"],
+        },
+      ],
     },
     {
       id: "reading-002",
@@ -171,6 +237,16 @@ export const demoDashboardResult: DashboardResultData = {
       priority: "high",
       sourceUrl: "https://example.org/calibration",
       studentName: "Alice",
+      outputSummary: "Targets the calibration regression that still blocks confidence in the result.",
+      attributions: [
+        {
+          sourceType: "blocker",
+          originLayer: "current_transcript",
+          label: "Calibration still regresses after the final curriculum stage.",
+          detail: "Current blocker that makes this reading high priority.",
+          chunkIds: ["chunk-0002"],
+        },
+      ],
     },
     {
       id: "reading-003",
@@ -180,6 +256,16 @@ export const demoDashboardResult: DashboardResultData = {
       priority: "medium",
       sourceUrl: "https://example.org/retrieval",
       studentName: "Bob",
+      outputSummary: "Supports the traceability workflow that must be visible in the demo.",
+      attributions: [
+        {
+          sourceType: "advisor_idea",
+          originLayer: "current_transcript",
+          label: "Test retrieval-assisted logging for transcript traceability",
+          detail: "This reading is tied to the traceability execution path.",
+          chunkIds: ["chunk-0005"],
+        },
+      ],
     },
   ],
   claims: [
@@ -193,6 +279,19 @@ export const demoDashboardResult: DashboardResultData = {
       transcriptSnippet:
         "One claim we should verify is whether curriculum learning consistently improves hard-example macro F1 in small-data settings.",
       sourceChunkIds: ["chunk-0008"],
+      triggerReason:
+        "Verification was enabled and this claim could affect how the advisor interprets next week's validation result.",
+      outputSummary: "The current evidence is directionally relevant but still incomplete.",
+      attributions: [
+        {
+          sourceType: "claim",
+          originLayer: "current_transcript",
+          label:
+            "One claim we should verify is whether curriculum learning consistently improves hard-example macro F1 in small-data settings.",
+          detail: "Transcript slice that triggered evidence verification.",
+          chunkIds: ["chunk-0008"],
+        },
+      ],
       evidenceCards: [
         {
           id: "evidence-001",
@@ -293,6 +392,16 @@ export const demoDashboardResult: DashboardResultData = {
         priority: "medium",
       },
     ],
+    items: [
+      {
+        id: "agenda-001",
+        itemType: "agenda",
+        title: "Address the calibration regression before anything else",
+        reason: "The top risk from this meeting should lead the next advisor discussion.",
+        originLayer: "current_transcript",
+        attributions: [],
+      },
+    ],
   },
   deliverables: [
     {
@@ -372,4 +481,43 @@ Two advisor ideas need validation, three open tasks remain, and calibration regr
 - Close the evidence gap around the small-data claim.`,
     },
   ],
+  orchestration: {
+    controllerAgentName: "主控 Agent",
+    llmProvider: "deepseek",
+    llmModel: "deepseek-chat",
+    stages: [
+      {
+        key: "controller-intake",
+        label: "Controller intake",
+        description: "Loaded the transcript and meeting metadata for the execution pipeline.",
+        agentName: "主控 Agent",
+        agentGoal: "Confirm the imported meeting is ready to become next-week execution.",
+        inputSource: "Imported transcript and meeting metadata",
+        outputTarget: "Ready-to-run review pipeline",
+        fallback: "If intake fails, stop the run and keep the original import reviewable.",
+        outputSummary: "Loaded 8 transcript chunks from the demo meeting.",
+        status: "completed",
+      },
+      {
+        key: "memory-load",
+        label: "Memory load",
+        description: "No earlier meeting memory was loaded for this project.",
+        agentName: "记忆管家 Agent",
+        agentGoal: "Load reusable project memory before planning the next week.",
+        inputSource: "Project id and transcript-derived memory query",
+        outputTarget: "Historical project memory snapshot",
+        fallback: "If no memory exists yet, continue in first-meeting mode.",
+        outputSummary: "No earlier meeting memory was loaded for this project.",
+        status: "completed",
+      },
+    ],
+    memoryUsage: {
+      projectId: "evidenceflow-demo-project",
+      priorMeetingCount: 0,
+      openTaskCount: 0,
+      recentDecisionCount: 0,
+      relevantContextCount: 0,
+      memoryInUse: [],
+    },
+  },
 };

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 
@@ -164,3 +165,64 @@ def test_project_memory_persists_and_retrieves_all_required_records() -> None:
         hit.entry_type in {"meeting_chunk", "decision", "advisor_idea", "key_paper"}
         for hit in snapshot.relevant_context
     )
+
+
+def test_project_memory_updates_action_item_status_and_refreshes_vector_memory() -> None:
+    base_dir = Path.cwd() / "backend" / "storage" / ".tmp"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = base_dir / f"project-memory-{uuid.uuid4().hex}"
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    project = ProjectRecord(
+        project_id="project-002",
+        name="EvidenceFlow",
+        description="Research planning assistant.",
+        domain="nlp",
+    )
+    meeting = ProjectMeetingRecord(
+        meeting_id="meeting-memory-002",
+        project_id="project-002",
+        title="Weekly lab meeting",
+        summary="Alice committed to a final ablation pass.",
+    )
+    action_item = ActionItem(
+        meeting_id="meeting-memory-002",
+        student_name="Alice",
+        title="Run the hard-negative curriculum ablation",
+        owner="Alice",
+        deadline="Friday",
+        priority="high",
+        status="open",
+    )
+
+    service = build_memory_service(tmp_path)
+    service.remember_meeting(
+        project,
+        meeting,
+        action_items=[action_item],
+        transcript=build_transcript(),
+    )
+
+    updated_action_item = service.update_action_item_status(
+        "project-002",
+        meeting_id="meeting-memory-002",
+        title="Run the hard-negative curriculum ablation",
+        owner="Alice",
+        status="done",
+    )
+
+    assert updated_action_item is not None
+    assert updated_action_item.status == "done"
+
+    snapshot = service.load_project_memory("project-002")
+    assert snapshot.action_items[0].status == "done"
+
+    records_path = tmp_path / "lancedb" / "project_memory_records.json"
+    vector_records = json.loads(records_path.read_text(encoding="utf-8"))
+    action_record = next(
+        record
+        for record in vector_records
+        if record["entry_type"] == "action_item"
+        and "Run the hard-negative curriculum ablation" in record["text"]
+    )
+    assert action_record["metadata"]["status"] == "done"

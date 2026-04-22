@@ -10,6 +10,7 @@ from backend.schemas.research_idea import (
     IdeaNextAction,
     ResearchIdea,
 )
+from backend.services.response_language import ResponseLanguage, build_json_output_language_instruction
 
 
 class ChatJsonClient(Protocol):
@@ -30,7 +31,7 @@ class IdeaCaptureError(RuntimeError):
 
 
 class IdeaCaptureService:
-    system_prompt = (
+    base_system_prompt = (
         "You extract advisor research ideas from a research-group meeting transcript. "
         "Return JSON only and never wrap the answer in markdown."
     )
@@ -43,6 +44,7 @@ class IdeaCaptureService:
         transcript: ParsedTranscript,
         *,
         meeting_id: str | None = None,
+        output_language: ResponseLanguage = "en",
     ) -> AdvisorIdeaCaptureResult:
         resolved_meeting_id = meeting_id or transcript.meeting_id
         if not resolved_meeting_id:
@@ -51,14 +53,22 @@ class IdeaCaptureService:
             raise IdeaCaptureError("Cannot capture advisor ideas from an empty transcript.")
 
         payload = self.client.chat_json(
-            self._build_prompt(transcript),
-            system_prompt=self.system_prompt,
+            self._build_prompt(transcript, output_language=output_language),
+            system_prompt=self._build_system_prompt(output_language),
             temperature=0.0,
             timeout=60.0,
         )
         return self._normalize_payload(payload, meeting_id=resolved_meeting_id)
 
-    def _build_prompt(self, transcript: ParsedTranscript) -> str:
+    def _build_system_prompt(self, output_language: ResponseLanguage) -> str:
+        return f"{self.base_system_prompt} {build_json_output_language_instruction(output_language)}"
+
+    def _build_prompt(
+        self,
+        transcript: ParsedTranscript,
+        *,
+        output_language: ResponseLanguage,
+    ) -> str:
         transcript_lines: list[str] = []
         for chunk in transcript.chunks:
             if chunk.timestamp_start and chunk.timestamp_end:
@@ -111,6 +121,7 @@ class IdeaCaptureService:
             "- If the transcript does not specify an owner or due date, use the literal string 'unknown'.\n"
             "- Every idea must include next_actions, recommended_reading, and validation_metrics keys. Use empty lists if needed.\n"
             "- Do not invent references. Use 'unknown' when you are not confident about a URL.\n\n"
+            f"Output language: {build_json_output_language_instruction(output_language)}\n\n"
             "Transcript:\n"
             f"{transcript_block}"
         )

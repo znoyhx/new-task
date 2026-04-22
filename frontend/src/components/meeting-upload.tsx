@@ -27,6 +27,12 @@ type MeetingUploadProps = {
   onInputModeChange?: (value: MeetingInputMode) => void;
   onAudioFileLoad?: (file: File | null) => void;
   onClearAudio?: () => void;
+  activeOrchestrationStage?: ProcessingStage | null;
+  errorMeta?: {
+    stage?: string;
+    agent?: string;
+    fallback?: string;
+  } | null;
 };
 
 export function MeetingUpload({
@@ -47,6 +53,8 @@ export function MeetingUpload({
   onInputModeChange,
   onAudioFileLoad,
   onClearAudio,
+  activeOrchestrationStage = null,
+  errorMeta = null,
 }: MeetingUploadProps) {
   const copy = dashboardCopy[language];
   const isAudioMode = inputMode === "audio";
@@ -184,6 +192,31 @@ export function MeetingUpload({
               );
             })}
           </ol>
+
+          <div className="agent-orchestration-card">
+            <p className="eyebrow">{copy.agentOrchestration}</p>
+            <strong className="panel-title">
+              {errorMeta?.agent || activeOrchestrationStage?.agentName || copy.activeAgent}
+            </strong>
+            <dl className="detail-list">
+              <div>
+                <dt>{copy.agentGoal}</dt>
+                <dd>{activeOrchestrationStage?.agentGoal || errorMessage || "..."}</dd>
+              </div>
+              <div>
+                <dt>{copy.inputSource}</dt>
+                <dd>{activeOrchestrationStage?.inputSource || "..."}</dd>
+              </div>
+              <div>
+                <dt>{copy.outputTarget}</dt>
+                <dd>{activeOrchestrationStage?.outputTarget || errorMeta?.stage || "..."}</dd>
+              </div>
+              <div>
+                <dt>{copy.fallbackStrategy}</dt>
+                <dd>{errorMeta?.fallback || activeOrchestrationStage?.fallback || "..."}</dd>
+              </div>
+            </dl>
+          </div>
         </div>
       </div>
     </section>

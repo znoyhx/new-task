@@ -10,6 +10,7 @@ from backend.schemas.reading_recommendation import (
 )
 from backend.schemas.research_idea import ResearchIdea
 from backend.schemas.student_progress import MeetingProgressSnapshot
+from backend.services.response_language import ResponseLanguage, build_json_output_language_instruction
 
 
 class ChatJsonClient(Protocol):
@@ -30,7 +31,7 @@ class ReadingRecommendationError(RuntimeError):
 
 
 class ReadingRecommendationService:
-    system_prompt = (
+    base_system_prompt = (
         "You generate prioritized reading recommendations for a research-group workflow. "
         "Return JSON only and never wrap the answer in markdown."
     )
@@ -45,6 +46,7 @@ class ReadingRecommendationService:
         *,
         progress: MeetingProgressSnapshot | None = None,
         meeting_id: str | None = None,
+        output_language: ResponseLanguage = "en",
     ) -> ReadingRecommendationBatch:
         resolved_meeting_id = meeting_id or transcript.meeting_id
         if not resolved_meeting_id:
@@ -53,8 +55,13 @@ class ReadingRecommendationService:
             raise ReadingRecommendationError("Cannot generate reading recommendations from an empty transcript.")
 
         payload = self.client.chat_json(
-            self._build_prompt(transcript, ideas=ideas, progress=progress),
-            system_prompt=self.system_prompt,
+            self._build_prompt(
+                transcript,
+                ideas=ideas,
+                progress=progress,
+                output_language=output_language,
+            ),
+            system_prompt=self._build_system_prompt(output_language),
             temperature=0.0,
             timeout=60.0,
         )
@@ -64,12 +71,16 @@ class ReadingRecommendationService:
             ideas=ideas,
         )
 
+    def _build_system_prompt(self, output_language: ResponseLanguage) -> str:
+        return f"{self.base_system_prompt} {build_json_output_language_instruction(output_language)}"
+
     def _build_prompt(
         self,
         transcript: ParsedTranscript,
         *,
         ideas: Sequence[ResearchIdea],
         progress: MeetingProgressSnapshot | None,
+        output_language: ResponseLanguage,
     ) -> str:
         transcript_lines: list[str] = []
         for chunk in transcript.chunks:
@@ -117,6 +128,7 @@ class ReadingRecommendationService:
             "- Use canonical source URLs only when you are confident. Otherwise use the literal string 'unknown'.\n"
             "- Do not fabricate citations or paper metadata.\n"
             "- Keep the list concise and ordered by practical value for next week.\n\n"
+            f"Output language: {build_json_output_language_instruction(output_language)}\n\n"
             "Advisor ideas:\n"
             f"{chr(10).join(idea_lines) if idea_lines else '- none'}\n\n"
             "Known blockers:\n"

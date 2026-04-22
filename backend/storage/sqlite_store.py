@@ -154,6 +154,45 @@ class SQLiteStore:
     def load_action_items(self, project_id: str) -> list[ActionItem]:
         return self._load_models("action_items", project_id, ActionItem)
 
+    def update_action_item_status(
+        self,
+        project_id: str,
+        *,
+        meeting_id: str,
+        title: str,
+        owner: str,
+        status: str,
+    ) -> ActionItem | None:
+        record_id = f"{meeting_id}:action:{title.lower()}:{owner.lower()}"
+        row = self._fetch_one(
+            """
+            SELECT payload_json
+            FROM action_items
+            WHERE project_id = ? AND record_id = ?
+            """,
+            (project_id, record_id),
+        )
+        if row is None:
+            return None
+
+        action_item = ActionItem.model_validate_json(row["payload_json"])
+        updated_action_item = action_item.model_copy(update={"status": status})
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE action_items
+                SET payload_json = ?
+                WHERE project_id = ? AND record_id = ?
+                """,
+                (
+                    json.dumps(updated_action_item.model_dump(mode="json"), ensure_ascii=True, sort_keys=True),
+                    project_id,
+                    record_id,
+                ),
+            )
+        return updated_action_item
+
     def load_claims(self, project_id: str) -> list[Claim]:
         return self._load_models("claims", project_id, Claim)
 

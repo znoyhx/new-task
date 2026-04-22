@@ -8,6 +8,7 @@ import { demoDashboardResult } from "../dashboard-data";
 import { processingStagesByLanguage } from "../dashboard-copy";
 import { EvidencePanel } from "../evidence-panel";
 import { MeetingUpload } from "../meeting-upload";
+import { MemoryPanel } from "../memory-panel";
 
 function runDashboardShellTest() {
   const markup = renderToStaticMarkup(<DashboardPage />);
@@ -28,6 +29,7 @@ function runPanelRenderTest() {
         readingList={demoDashboardResult.readingList}
         agenda={demoDashboardResult.briefing.recommendedAgenda}
         isReady
+        onUpdateStatus={() => {}}
       />
       <EvidencePanel
         language="zh"
@@ -44,6 +46,71 @@ function runPanelRenderTest() {
         isReady
         onSelectDeliverable={() => {}}
         onExportDeliverable={() => {}}
+        memoryUsage={demoDashboardResult.orchestration.memoryUsage ?? null}
+      />
+      <MemoryPanel
+        language="en"
+        memory={{
+          projectId: "project-001",
+          projectName: "Integration Project",
+          meetings: [
+            {
+              meetingId: "meeting-history-001",
+              title: "History Meeting",
+              summary: "Original ablation request.",
+              createdAt: "April 11, 2026",
+            },
+          ],
+          recentDecisions: [
+            {
+              id: "decision-001",
+              meetingId: "meeting-history-001",
+              meetingTitle: "History Meeting",
+              title: "Keep the ablation in scope",
+              rationale: "It remains the fastest validation path.",
+              decidedBy: "Prof. Chen",
+            },
+          ],
+          openActionItems: [
+            {
+              id: "meeting-history-001::carry forward the ablation checklist::alice",
+              meetingId: "meeting-history-001",
+              meetingTitle: "History Meeting",
+              title: "Carry forward the ablation checklist",
+              owner: "Alice",
+              dueDate: "Friday",
+              priority: "high",
+              status: "open",
+              originLayer: "history_memory",
+            },
+          ],
+          briefing: {
+            summary: "Project memory summary.",
+            focusQuestions: ["What still blocks execution?"],
+            recommendedAgenda: [],
+            items: [
+              {
+                id: "briefing-001",
+                itemType: "carryover_task",
+                title: "Carry forward the ablation checklist",
+                reason: "Still unfinished and relevant this week.",
+                originLayer: "history_memory",
+                attributions: [],
+              },
+            ],
+          },
+          memoryUsage: {
+            projectId: "project-001",
+            priorMeetingCount: 1,
+            openTaskCount: 1,
+            recentDecisionCount: 1,
+            relevantContextCount: 0,
+            memoryInUse: [],
+          },
+        }}
+        isReady
+        isLoading={false}
+        errorMessage=""
       />
     </>
   );
@@ -52,13 +119,15 @@ function runPanelRenderTest() {
   assert.match(markup, /Curriculum Learning for Robust Classification/);
   assert.match(markup, /待核验/);
   assert.match(markup, /导出 Markdown/);
+  assert.match(markup, /Project Memory/);
+  assert.match(markup, /Carry forward the ablation checklist/);
 }
 
 function runProcessingStageTest() {
   const markup = renderToStaticMarkup(
     <MeetingUpload
       language="zh"
-      transcriptText="示例 transcript"
+      transcriptText="绀轰緥 transcript"
       runState="loading"
       activeStageIndex={2}
       errorMessage=""
@@ -68,6 +137,7 @@ function runProcessingStageTest() {
       onLoadDemo={() => {}}
       onProcess={() => {}}
       onReset={() => {}}
+      activeOrchestrationStage={processingStagesByLanguage.zh[2]}
     />
   );
 
@@ -77,6 +147,7 @@ function runProcessingStageTest() {
   assert.match(markup, /检索证据/);
   assert.match(markup, /生成计划/);
   assert.match(markup, /组会 transcript/);
+  assert.match(markup, /Agent 编排/);
 }
 
 runDashboardShellTest();

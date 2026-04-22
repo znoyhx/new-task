@@ -6,6 +6,11 @@ from backend.adapters.deepseek_client import DeepSeekClient
 from backend.schemas.claim import Claim, ClaimVerificationResult
 from backend.schemas.evidence_card import EvidenceCard
 from backend.services.evidence_retrieval_service import EvidenceRetrievalService
+from backend.services.response_language import (
+    ResponseLanguage,
+    build_json_output_language_instruction,
+    localize_text,
+)
 
 
 class ChatJsonClient(Protocol):
@@ -26,7 +31,7 @@ class ClaimVerificationError(RuntimeError):
 
 
 class ClaimVerificationService:
-    system_prompt = (
+    base_system_prompt = (
         "You verify research meeting claims against provided evidence cards. "
         "Return JSON only and never wrap the answer in markdown."
     )
@@ -43,6 +48,7 @@ class ClaimVerificationService:
         self,
         claim: Claim,
         evidence_cards: Sequence[EvidenceCard] | None = None,
+        output_language: ResponseLanguage = "en",
     ) -> ClaimVerificationResult:
         available_evidence = list(evidence_cards or [])
         if not available_evidence and self.retrieval_service is not None:
@@ -53,20 +59,44 @@ class ClaimVerificationService:
                 claim=claim.model_copy(update={"verification_status": "needs_verification"}),
                 verdict="needs_verification",
                 confidence="low",
-                summary="No evidence cards were available for verification.",
+                summary=localize_text(
+                    output_language,
+                    zh="当前没有可用于核验的证据卡片。",
+                    en="No evidence cards were available for verification.",
+                ),
                 evidence_cards=[],
-                gaps=["No external evidence was retrieved for this claim."],
+                gaps=[
+                    localize_text(
+                        output_language,
+                        zh="这条 claim 当前没有检索到外部证据。",
+                        en="No external evidence was retrieved for this claim.",
+                    )
+                ],
             )
 
         payload = self.client.chat_json(
-            self._build_prompt(claim, available_evidence),
-            system_prompt=self.system_prompt,
+            self._build_prompt(claim, available_evidence, output_language=output_language),
+            system_prompt=self._build_system_prompt(output_language),
             temperature=0.0,
             timeout=60.0,
         )
-        return self._normalize_payload(payload, claim=claim, evidence_cards=available_evidence)
+        return self._normalize_payload(
+            payload,
+            claim=claim,
+            evidence_cards=available_evidence,
+            output_language=output_language,
+        )
 
-    def _build_prompt(self, claim: Claim, evidence_cards: Sequence[EvidenceCard]) -> str:
+    def _build_system_prompt(self, output_language: ResponseLanguage) -> str:
+        return f"{self.base_system_prompt} {build_json_output_language_instruction(output_language)}"
+
+    def _build_prompt(
+        self,
+        claim: Claim,
+        evidence_cards: Sequence[EvidenceCard],
+        *,
+        output_language: ResponseLanguage,
+    ) -> str:
         evidence_lines: list[str] = []
         for card in evidence_cards:
             evidence_lines.append(
@@ -96,6 +126,7 @@ class ClaimVerificationService:
             "- If the evidence is incomplete, indirect, or mixed, choose needs_verification.\n"
             "- Contradicted requires direct conflicting evidence, not just absence of support.\n"
             "- Assess every evidence card by id.\n\n"
+            f"Output language: {build_json_output_language_instruction(output_language)}\n\n"
             "Claim:\n"
             f"- text={claim.text}\n"
             f"- speaker={claim.speaker}\n"
@@ -110,6 +141,7 @@ class ClaimVerificationService:
         *,
         claim: Claim,
         evidence_cards: Sequence[EvidenceCard],
+        output_language: ResponseLanguage,
     ) -> ClaimVerificationResult:
         raw_assessments = (
             payload.get("evidence_assessments")
@@ -157,7 +189,11 @@ class ClaimVerificationService:
         confidence = self._normalize_confidence(payload.get("confidence"))
         summary = self._clean_text(payload.get("summary"))
         if not summary:
-            summary = f"Claim review finished with verdict: {verdict}."
+            summary = localize_text(
+                output_language,
+                zh=f"这条 claim 的核验结果为：{verdict}。",
+                en=f"Claim review finished with verdict: {verdict}.",
+            )
 
         updated_claim = claim.model_copy(update={"verification_status": verdict})
         return ClaimVerificationResult(

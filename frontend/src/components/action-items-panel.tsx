@@ -1,10 +1,16 @@
 import type {
   ActionItemData,
+  ActionItemStatusValue,
   BriefingAgendaItemData,
   DashboardLanguage,
   ReadingItemData,
 } from "./dashboard-types";
-import { dashboardCopy, getPriorityText, getStatusText } from "./dashboard-copy";
+import {
+  dashboardCopy,
+  getOriginLayerLabel,
+  getPriorityText,
+  getStatusText,
+} from "./dashboard-copy";
 
 type ActionItemsPanelProps = {
   language: DashboardLanguage;
@@ -12,7 +18,32 @@ type ActionItemsPanelProps = {
   readingList: ReadingItemData[];
   agenda: BriefingAgendaItemData[];
   isReady: boolean;
+  updatingActionId?: string | null;
+  statusErrorMessage?: string;
+  onUpdateStatus?: (item: ActionItemData, nextStatus: ActionItemStatusValue) => void;
 };
+
+const actionStatusOptions: ActionItemStatusValue[] = [
+  "open",
+  "in_progress",
+  "blocked",
+  "done",
+  "unknown",
+];
+
+function getStatusControlCopy(language: DashboardLanguage) {
+  if (language === "zh") {
+    return {
+      label: "任务状态",
+      updating: "更新中",
+    };
+  }
+
+  return {
+    label: "Task status",
+    updating: "Updating",
+  };
+}
 
 export function ActionItemsPanel({
   language,
@@ -20,8 +51,12 @@ export function ActionItemsPanel({
   readingList,
   agenda,
   isReady,
+  updatingActionId,
+  statusErrorMessage,
+  onUpdateStatus,
 }: ActionItemsPanelProps) {
   const copy = dashboardCopy[language];
+  const statusCopy = getStatusControlCopy(language);
 
   if (!isReady) {
     return (
@@ -54,14 +89,42 @@ export function ActionItemsPanel({
           <li className="task-card" key={item.id}>
             <div className="task-card-top">
               <strong>{item.title}</strong>
-              <span className={`priority-pill priority-${item.priority}`}>
-                {getPriorityText(language, item.priority)}
-              </span>
+              <div className="task-card-actions">
+                <span className={`priority-pill priority-${item.priority}`}>
+                  {getPriorityText(language, item.priority)}
+                </span>
+                {onUpdateStatus ? (
+                  <label className="status-control">
+                    <span className="status-control-label">
+                      {updatingActionId === item.id ? statusCopy.updating : statusCopy.label}
+                    </span>
+                    <select
+                      className="status-select"
+                      aria-label={`${statusCopy.label}: ${item.title}`}
+                      value={item.status}
+                      disabled={updatingActionId === item.id}
+                      onChange={(event) => {
+                        const nextStatus = event.target.value as ActionItemStatusValue;
+                        if (nextStatus !== item.status) {
+                          onUpdateStatus(item, nextStatus);
+                        }
+                      }}
+                    >
+                      {actionStatusOptions.map((statusOption) => (
+                        <option key={statusOption} value={statusOption}>
+                          {getStatusText(language, statusOption)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+              </div>
             </div>
             <p className="task-meta">
               {item.owner} / {copy.due} {item.dueDate} / {getStatusText(language, item.status)}
             </p>
             <p className="task-rationale">{item.rationale}</p>
+            <p className="supporting-copy">{item.outputSummary}</p>
             <details className="task-details">
               <summary>{copy.whyTaskExists}</summary>
               <p>{item.sourceLabel}</p>
@@ -70,10 +133,19 @@ export function ActionItemsPanel({
                   <li key={metric}>{metric}</li>
                 ))}
               </ul>
+              <ul className="explanation-list">
+                {item.attributions.map((attribution) => (
+                  <li key={`${item.id}-${attribution.label}`}>
+                    <strong>{getOriginLayerLabel(language, attribution.originLayer)}</strong>
+                    <p>{`${attribution.label}: ${attribution.detail}`}</p>
+                  </li>
+                ))}
+              </ul>
             </details>
           </li>
         ))}
       </ul>
+      {statusErrorMessage ? <p className="inline-error">{statusErrorMessage}</p> : null}
 
       <div className="subsection">
         <div className="subsection-header">
@@ -86,6 +158,15 @@ export function ActionItemsPanel({
               <div>
                 <strong>{item.title}</strong>
                 <p>{item.reason}</p>
+                <p className="supporting-copy">{item.outputSummary}</p>
+                <ul className="explanation-list">
+                  {item.attributions.map((attribution) => (
+                    <li key={`${item.id}-${attribution.label}`}>
+                      <strong>{getOriginLayerLabel(language, attribution.originLayer)}</strong>
+                      <p>{`${attribution.label}: ${attribution.detail}`}</p>
+                    </li>
+                  ))}
+                </ul>
               </div>
               <span className={`priority-pill priority-${item.priority}`}>
                 {getPriorityText(language, item.priority)}

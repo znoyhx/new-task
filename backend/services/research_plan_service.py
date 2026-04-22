@@ -8,6 +8,7 @@ from backend.adapters.deepseek_client import DeepSeekClient
 from backend.schemas.meeting import ParsedTranscript
 from backend.schemas.research_idea import ResearchIdea
 from backend.schemas.student_progress import MeetingProgressSnapshot
+from backend.services.response_language import ResponseLanguage, build_json_output_language_instruction
 
 ResearchPlanPriority = Literal["low", "medium", "high"]
 
@@ -113,7 +114,7 @@ class ResearchPlanError(RuntimeError):
 
 
 class ResearchPlanService:
-    system_prompt = (
+    base_system_prompt = (
         "You turn advisor ideas and current blockers into a concrete next-week research plan. "
         "Return JSON only and never wrap the answer in markdown."
     )
@@ -128,6 +129,7 @@ class ResearchPlanService:
         *,
         progress: MeetingProgressSnapshot | None = None,
         meeting_id: str | None = None,
+        output_language: ResponseLanguage = "en",
     ) -> ResearchPlanResult:
         resolved_meeting_id = meeting_id or transcript.meeting_id
         if not resolved_meeting_id:
@@ -138,8 +140,13 @@ class ResearchPlanService:
             raise ResearchPlanError("At least one advisor idea is required to generate a research plan.")
 
         payload = self.client.chat_json(
-            self._build_prompt(transcript, ideas=ideas, progress=progress),
-            system_prompt=self.system_prompt,
+            self._build_prompt(
+                transcript,
+                ideas=ideas,
+                progress=progress,
+                output_language=output_language,
+            ),
+            system_prompt=self._build_system_prompt(output_language),
             temperature=0.0,
             timeout=60.0,
         )
@@ -149,12 +156,16 @@ class ResearchPlanService:
             ideas=ideas,
         )
 
+    def _build_system_prompt(self, output_language: ResponseLanguage) -> str:
+        return f"{self.base_system_prompt} {build_json_output_language_instruction(output_language)}"
+
     def _build_prompt(
         self,
         transcript: ParsedTranscript,
         *,
         ideas: Sequence[ResearchIdea],
         progress: MeetingProgressSnapshot | None,
+        output_language: ResponseLanguage,
     ) -> str:
         transcript_lines: list[str] = []
         for chunk in transcript.chunks:
@@ -209,6 +220,7 @@ class ResearchPlanService:
             "- Success metrics should be measurable outputs, not vague aspirations.\n"
             "- If owner or due date is not stated in the meeting, use the literal string 'unknown'.\n"
             "- Prefer tasks that directly resolve blockers or validate an advisor idea.\n\n"
+            f"Output language: {build_json_output_language_instruction(output_language)}\n\n"
             "Advisor ideas:\n"
             f"{chr(10).join(idea_lines)}\n\n"
             "Current progress and blockers:\n"

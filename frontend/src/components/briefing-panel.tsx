@@ -1,11 +1,16 @@
 "use client";
 
-import { dashboardCopy, getDeliverableLabel } from "./dashboard-copy";
+import {
+  dashboardCopy,
+  getDeliverableLabel,
+  getOriginLayerLabel,
+} from "./dashboard-copy";
 import type {
   BriefingData,
   DashboardLanguage,
   DeliverableKey,
   DeliverablePreview,
+  MemoryUsageData,
 } from "./dashboard-types";
 
 type BriefingPanelProps = {
@@ -16,6 +21,7 @@ type BriefingPanelProps = {
   isReady: boolean;
   onSelectDeliverable: (key: DeliverableKey) => void;
   onExportDeliverable: (deliverable: DeliverablePreview) => void;
+  memoryUsage: MemoryUsageData | null;
 };
 
 export function BriefingPanel({
@@ -26,6 +32,7 @@ export function BriefingPanel({
   isReady,
   onSelectDeliverable,
   onExportDeliverable,
+  memoryUsage,
 }: BriefingPanelProps) {
   const copy = dashboardCopy[language];
   const selectedDeliverable =
@@ -48,6 +55,16 @@ export function BriefingPanel({
       ) : (
         <>
           <p className="briefing-summary">{briefing.summary}</p>
+          <div className="memory-summary-strip">
+            <p className="eyebrow">{copy.memoryInUse}</p>
+            {memoryUsage && memoryUsage.priorMeetingCount > 0 ? (
+              <p className="supporting-copy">
+                {`${memoryUsage.priorMeetingCount} prior meeting(s), ${memoryUsage.openTaskCount} carryover task(s), ${memoryUsage.recentDecisionCount} decision(s).`}
+              </p>
+            ) : (
+              <p className="supporting-copy">{copy.memoryEmpty}</p>
+            )}
+          </div>
 
           <div className="subsection">
             <div className="subsection-header">
@@ -58,6 +75,22 @@ export function BriefingPanel({
               {briefing.focusQuestions.map((question) => (
                 <li key={question}>
                   <p>{question}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="subsection">
+            <div className="subsection-header">
+              <p className="eyebrow">{copy.briefingItems}</p>
+              <h4>{copy.sourceExplanation}</h4>
+            </div>
+            <ul className="agenda-list">
+              {briefing.items.map((item) => (
+                <li key={item.id}>
+                  <strong>{item.title}</strong>
+                  <p className="supporting-copy">{getOriginLayerLabel(language, item.originLayer)}</p>
+                  <p>{item.reason}</p>
                 </li>
               ))}
             </ul>

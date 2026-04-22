@@ -13,6 +13,7 @@ from backend.schemas.project_memory import (
 )
 from backend.schemas.research_idea import ResearchIdea
 from backend.schemas.risk import Risk
+from backend.services.response_language import ResponseLanguage, is_chinese, localize_text
 
 AgendaPriority = Literal["high", "medium", "low"]
 
@@ -74,13 +75,19 @@ class BriefingResult(BaseModel):
     last_advisor_ideas: list[ResearchIdea] = Field(default_factory=list)
     student_commitments: list[BriefingStudentCommitment] = Field(default_factory=list)
     open_tasks: list[ActionItem] = Field(default_factory=list)
+    carryover_tasks: list[ActionItem] = Field(default_factory=list)
     risks: list[BriefingRiskItem] = Field(default_factory=list)
     recommended_agenda: list[BriefingAgendaItem] = Field(default_factory=list)
     focus_questions: list[str] = Field(default_factory=list)
 
 
 class BriefingService:
-    def generate_briefing(self, project_memory: ProjectMemorySnapshot) -> BriefingResult:
+    def generate_briefing(
+        self,
+        project_memory: ProjectMemorySnapshot,
+        *,
+        output_language: ResponseLanguage = "en",
+    ) -> BriefingResult:
         if project_memory.project is None:
             raise ValueError("Project memory must include a project record.")
 
@@ -89,25 +96,41 @@ class BriefingService:
 
         last_advisor_ideas = self._filter_by_meeting(project_memory.advisor_ideas, latest_meeting_id)
         open_tasks = self._collect_open_tasks(project_memory.action_items)
-        student_commitments = self._build_student_commitments(open_tasks)
-        risks = self._collect_risks(project_memory, latest_meeting_id)
+        carryover_tasks = [
+            task
+            for task in open_tasks
+            if latest_meeting_id is not None and task.meeting_id != latest_meeting_id
+        ]
+        student_commitments = self._build_student_commitments(
+            open_tasks,
+            output_language=output_language,
+        )
+        risks = self._collect_risks(
+            project_memory,
+            latest_meeting_id,
+            output_language=output_language,
+        )
         recommended_agenda = self._build_recommended_agenda(
             open_tasks=open_tasks,
             risks=risks,
             last_advisor_ideas=last_advisor_ideas,
             claims=project_memory.claims,
+            output_language=output_language,
         )
         focus_questions = self._build_focus_questions(
             last_advisor_ideas=last_advisor_ideas,
             open_tasks=open_tasks,
             risks=risks,
             claims=project_memory.claims,
+            output_language=output_language,
         )
         summary = self._build_summary(
             latest_meeting=latest_meeting,
             open_tasks=open_tasks,
+            carryover_tasks=carryover_tasks,
             risks=risks,
             last_advisor_ideas=last_advisor_ideas,
+            output_language=output_language,
         )
 
         return BriefingResult(
@@ -118,6 +141,7 @@ class BriefingService:
             last_advisor_ideas=last_advisor_ideas[:4],
             student_commitments=student_commitments,
             open_tasks=open_tasks[:6],
+            carryover_tasks=carryover_tasks[:6],
             risks=risks[:6],
             recommended_agenda=recommended_agenda[:6],
             focus_questions=focus_questions[:6],
@@ -154,13 +178,19 @@ class BriefingService:
     def _build_student_commitments(
         self,
         open_tasks: list[ActionItem],
+        *,
+        output_language: ResponseLanguage,
     ) -> list[BriefingStudentCommitment]:
         grouped: dict[str, list[str]] = {}
         for task in open_tasks:
             student_name = (task.student_name or task.owner or "Unknown").strip() or "Unknown"
             grouped.setdefault(student_name, [])
             grouped[student_name].append(
-                f"{task.title} ({task.status}, due {task.deadline}, owner {task.owner})"
+                localize_text(
+                    output_language,
+                    zh=f"{task.title}（状态 {task.status}，截止 {task.deadline}，负责人 {task.owner}）",
+                    en=f"{task.title} ({task.status}, due {task.deadline}, owner {task.owner})",
+                )
             )
 
         commitments: list[BriefingStudentCommitment] = []
@@ -177,6 +207,8 @@ class BriefingService:
         self,
         project_memory: ProjectMemorySnapshot,
         latest_meeting_id: str | None,
+        *,
+        output_language: ResponseLanguage,
     ) -> list[BriefingRiskItem]:
         risks: list[BriefingRiskItem] = []
         seen_titles: set[str] = set()
@@ -204,7 +236,11 @@ class BriefingService:
                         title=blocker_title,
                         level="medium",
                         owner=progress.student_name,
-                        detail="Open blocker from the latest progress snapshot.",
+                        detail=localize_text(
+                            output_language,
+                            zh="来自最近一次 progress snapshot 的未解决 blocker。",
+                            en="Open blocker from the latest progress snapshot.",
+                        ),
                     )
                 )
                 seen_titles.add(blocker_title)
@@ -219,7 +255,11 @@ class BriefingService:
                     title=claim.text,
                     level="medium",
                     owner=claim.speaker,
-                    detail="This claim still lacks decisive evidence.",
+                    detail=localize_text(
+                        output_language,
+                        zh="这条 claim 目前仍缺少决定性证据。",
+                        en="This claim still lacks decisive evidence.",
+                    ),
                 )
             )
             seen_titles.add(claim.text)
@@ -234,6 +274,7 @@ class BriefingService:
         risks: list[BriefingRiskItem],
         last_advisor_ideas: list[ResearchIdea],
         claims: list[Claim],
+        output_language: ResponseLanguage,
     ) -> list[BriefingAgendaItem]:
         agenda: list[BriefingAgendaItem] = []
 
@@ -241,8 +282,16 @@ class BriefingService:
             top_risk = risks[0]
             agenda.append(
                 BriefingAgendaItem(
-                    title=f"Address the top risk: {top_risk.title}",
-                    reason=top_risk.detail or "This is the highest-priority unresolved risk.",
+                    title=localize_text(
+                        output_language,
+                        zh=f"优先处理最高风险：{top_risk.title}",
+                        en=f"Address the top risk: {top_risk.title}",
+                    ),
+                    reason=top_risk.detail or localize_text(
+                        output_language,
+                        zh="这是当前优先级最高的未解决风险。",
+                        en="This is the highest-priority unresolved risk.",
+                    ),
                     priority="high" if top_risk.level == "high" else "medium",
                 )
             )
@@ -251,8 +300,16 @@ class BriefingService:
             top_task = open_tasks[0]
             agenda.append(
                 BriefingAgendaItem(
-                    title=f"Review progress on {top_task.title}",
-                    reason=f"Open task owned by {top_task.owner} with due date {top_task.deadline}.",
+                    title=localize_text(
+                        output_language,
+                        zh=f"检查任务进展：{top_task.title}",
+                        en=f"Review progress on {top_task.title}",
+                    ),
+                    reason=localize_text(
+                        output_language,
+                        zh=f"未完成任务，负责人 {top_task.owner}，截止时间 {top_task.deadline}。",
+                        en=f"Open task owned by {top_task.owner} with due date {top_task.deadline}.",
+                    ),
                     priority="high" if top_task.priority == "high" else "medium",
                 )
             )
@@ -261,7 +318,11 @@ class BriefingService:
             top_idea = last_advisor_ideas[0]
             agenda.append(
                 BriefingAgendaItem(
-                    title=f"Validate advisor idea: {top_idea.idea_text}",
+                    title=localize_text(
+                        output_language,
+                        zh=f"核验导师 idea：{top_idea.idea_text}",
+                        en=f"Validate advisor idea: {top_idea.idea_text}",
+                    ),
                     reason=top_idea.expected_validation,
                     priority="medium",
                 )
@@ -271,7 +332,11 @@ class BriefingService:
         if pending_claims:
             agenda.append(
                 BriefingAgendaItem(
-                    title="Decide whether the open claim needs evidence follow-up",
+                    title=localize_text(
+                        output_language,
+                        zh="决定这条未完成 claim 是否需要证据跟进",
+                        en="Decide whether the open claim needs evidence follow-up",
+                    ),
                     reason=pending_claims[0].text,
                     priority="medium",
                 )
@@ -286,30 +351,47 @@ class BriefingService:
         open_tasks: list[ActionItem],
         risks: list[BriefingRiskItem],
         claims: list[Claim],
+        output_language: ResponseLanguage,
     ) -> list[str]:
         questions: list[str] = []
 
         if last_advisor_ideas:
             first_idea = last_advisor_ideas[0]
             questions.append(
-                f"What is the fastest validation path for '{first_idea.idea_text}'?"
+                localize_text(
+                    output_language,
+                    zh=f"'{first_idea.idea_text}' 的最快验证路径是什么？",
+                    en=f"What is the fastest validation path for '{first_idea.idea_text}'?",
+                )
             )
 
         if open_tasks:
             first_task = open_tasks[0]
             questions.append(
-                f"Can {first_task.owner} close '{first_task.title}' before {first_task.deadline}?"
+                localize_text(
+                    output_language,
+                    zh=f"{first_task.owner} 能否在 {first_task.deadline} 前完成 '{first_task.title}'？",
+                    en=f"Can {first_task.owner} close '{first_task.title}' before {first_task.deadline}?",
+                )
             )
 
         if risks:
             questions.append(
-                f"What mitigation is in place for the risk '{risks[0].title}'?"
+                localize_text(
+                    output_language,
+                    zh=f"针对风险 '{risks[0].title}'，当前有什么缓解方案？",
+                    en=f"What mitigation is in place for the risk '{risks[0].title}'?",
+                )
             )
 
         pending_claims = [claim for claim in claims if claim.verification_status == "needs_verification"]
         if pending_claims:
             questions.append(
-                f"Do we need evidence support for the claim '{pending_claims[0].text}'?"
+                localize_text(
+                    output_language,
+                    zh=f"我们是否需要为 claim '{pending_claims[0].text}' 补充证据？",
+                    en=f"Do we need evidence support for the claim '{pending_claims[0].text}'?",
+                )
             )
 
         return questions
@@ -319,12 +401,25 @@ class BriefingService:
         *,
         latest_meeting: ProjectMeetingRecord | None,
         open_tasks: list[ActionItem],
+        carryover_tasks: list[ActionItem],
         risks: list[BriefingRiskItem],
         last_advisor_ideas: list[ResearchIdea],
+        output_language: ResponseLanguage,
     ) -> str:
-        meeting_text = latest_meeting.title if latest_meeting is not None else "the latest meeting"
-        return (
-            f"Briefing for {meeting_text}: "
-            f"{len(open_tasks)} open tasks, {len(risks)} tracked risks, "
-            f"and {len(last_advisor_ideas)} recent advisor ideas need follow-up."
+        meeting_text = latest_meeting.title if latest_meeting is not None else (
+            "最新一次组会" if is_chinese(output_language) else "the latest meeting"
+        )
+        return localize_text(
+            output_language,
+            zh=(
+                f"{meeting_text} 的 briefing：当前有 {len(open_tasks)} 个未完成任务，"
+                f"{len(risks)} 个跟踪风险，{len(last_advisor_ideas)} 条近期导师 idea 需要跟进，"
+                f"其中 {len(carryover_tasks)} 个任务是从更早的组会延续下来的。"
+            ),
+            en=(
+                f"Briefing for {meeting_text}: "
+                f"{len(open_tasks)} open tasks, {len(risks)} tracked risks, "
+                f"{len(last_advisor_ideas)} recent advisor ideas need follow-up, "
+                f"and {len(carryover_tasks)} task(s) are being carried over from earlier meetings."
+            ),
         )

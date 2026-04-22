@@ -5,6 +5,7 @@ from typing import Any, Protocol
 from backend.adapters.deepseek_client import DeepSeekClient
 from backend.schemas.claim import Claim, ClaimExtractionResult
 from backend.schemas.meeting import ParsedTranscript, TranscriptChunk
+from backend.services.response_language import ResponseLanguage, build_json_output_language_instruction
 
 
 class ChatJsonClient(Protocol):
@@ -25,7 +26,7 @@ class ClaimExtractionError(RuntimeError):
 
 
 class ClaimExtractionService:
-    system_prompt = (
+    base_system_prompt = (
         "You extract high-value factual or strategic claims from a research-group meeting transcript. "
         "Return JSON only and never wrap the answer in markdown."
     )
@@ -38,6 +39,7 @@ class ClaimExtractionService:
         transcript: ParsedTranscript,
         *,
         meeting_id: str | None = None,
+        output_language: ResponseLanguage = "en",
     ) -> ClaimExtractionResult:
         resolved_meeting_id = meeting_id or transcript.meeting_id
         if not resolved_meeting_id:
@@ -46,8 +48,8 @@ class ClaimExtractionService:
             raise ClaimExtractionError("Cannot extract claims from an empty transcript.")
 
         payload = self.client.chat_json(
-            self._build_prompt(transcript),
-            system_prompt=self.system_prompt,
+            self._build_prompt(transcript, output_language=output_language),
+            system_prompt=self._build_system_prompt(output_language),
             temperature=0.0,
             timeout=60.0,
         )
@@ -57,7 +59,15 @@ class ClaimExtractionService:
             meeting_id=resolved_meeting_id,
         )
 
-    def _build_prompt(self, transcript: ParsedTranscript) -> str:
+    def _build_system_prompt(self, output_language: ResponseLanguage) -> str:
+        return f"{self.base_system_prompt} {build_json_output_language_instruction(output_language)}"
+
+    def _build_prompt(
+        self,
+        transcript: ParsedTranscript,
+        *,
+        output_language: ResponseLanguage,
+    ) -> str:
         transcript_lines: list[str] = []
         for chunk in transcript.chunks:
             if chunk.timestamp_start and chunk.timestamp_end:
@@ -93,6 +103,7 @@ class ClaimExtractionService:
             "- A strategic claim states a recommended direction, research hypothesis, or experimental priority.\n"
             "- Return an empty list if no claim is strong enough.\n"
             "- Keep the list concise.\n\n"
+            f"Output language: {build_json_output_language_instruction(output_language)}\n\n"
             "Transcript:\n"
             f"{chr(10).join(transcript_lines)}"
         )

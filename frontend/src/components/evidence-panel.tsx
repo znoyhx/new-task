@@ -1,6 +1,11 @@
 "use client";
 
-import { dashboardCopy, getEvidenceStanceLabel, getVerdictLabel } from "./dashboard-copy";
+import {
+  dashboardCopy,
+  getEvidenceStanceLabel,
+  getOriginLayerLabel,
+  getVerdictLabel,
+} from "./dashboard-copy";
 import type { ClaimData, DashboardLanguage } from "./dashboard-types";
 
 type EvidencePanelProps = {
@@ -66,6 +71,7 @@ export function EvidencePanel({
               {claim.speaker} / {copy.confidence} {claim.confidence}
             </p>
             <p>{claim.transcriptSnippet}</p>
+            <p className="supporting-copy">{claim.triggerReason}</p>
           </button>
         ))}
       </div>
@@ -77,6 +83,17 @@ export function EvidencePanel({
             <h4>{getVerdictLabel(language, activeClaim.verdict)}</h4>
           </div>
           <ul className="evidence-list">
+            <li className="evidence-card">
+              <strong>{activeClaim.outputSummary}</strong>
+              <ul className="explanation-list">
+                {activeClaim.attributions.map((attribution) => (
+                  <li key={`${activeClaim.id}-${attribution.label}`}>
+                    <strong>{getOriginLayerLabel(language, attribution.originLayer)}</strong>
+                    <p>{`${attribution.label}: ${attribution.detail}`}</p>
+                  </li>
+                ))}
+              </ul>
+            </li>
             {activeClaim.evidenceCards.map((card) => (
               <li className="evidence-card" key={card.id}>
                 <div className="evidence-card-top">

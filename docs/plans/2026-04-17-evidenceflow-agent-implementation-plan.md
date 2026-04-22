@@ -118,6 +118,64 @@ git add backend/api/meetings.py backend/services backend/schemas/meeting.py back
 git commit -m "feat: add meeting import and transcript parsing"
 ```
 
+### Task 3A: Implement Meeting Audio Parsing and Upload Flow
+
+**Files:**
+- Modify: `backend/api/meetings.py`
+- Modify: `backend/adapters/whisper_adapter.py`
+- Modify: `backend/services/transcription_service.py`
+- Modify: `backend/schemas/meeting.py`
+- Test: `backend/tests/test_meetings_api.py`
+- Test: `backend/tests/test_transcript_parser.py`
+
+**Step 1: Write failing tests for audio upload and local transcription**
+
+Cover:
+- multipart audio upload
+- supported / unsupported audio formats
+- local transcription adapter result normalization
+- persisted audio metadata and parsed transcript output
+
+**Step 2: Implement local audio import endpoint**
+
+Keep `POST /api/meetings/import` for JSON transcript or local `audio_path` import, and add a dedicated browser upload endpoint for audio files so the frontend does not need filesystem paths.
+
+**Step 3: Implement the Whisper adapter**
+
+Implement one local transcription backend end-to-end first:
+- default backend: `faster-whisper`
+- output: `text + segments`
+- map segment timestamps into `TranscriptChunk`
+
+Do not introduce any paid or hosted transcription provider.
+
+**Step 4: Persist audio source and transcription metadata**
+
+Save:
+- original audio file
+- generated transcript
+- parsed transcript chunks
+- transcription backend and warnings
+
+All data must stay in local storage.
+
+**Step 5: Run backend tests**
+
+```bash
+pytest backend/tests/test_meetings_api.py backend/tests/test_transcript_parser.py -v
+```
+
+**Step 6: Run one end-to-end audio-driven live validation**
+
+Import a real local sample audio file, produce a transcript, then run one real DeepSeek-backed review path on that transcript-derived meeting to confirm the audio path reaches the same downstream agent workflow.
+
+**Step 7: Commit**
+
+```bash
+git add backend/api/meetings.py backend/adapters/whisper_adapter.py backend/services/transcription_service.py backend/schemas/meeting.py backend/tests/test_meetings_api.py backend/tests/test_transcript_parser.py
+git commit -m "feat: add local meeting audio parsing flow"
+```
+
 ### Task 4: Implement Weekly Progress and Risk Extraction
 
 **Files:**
@@ -332,6 +390,7 @@ git commit -m "feat: generate briefings and delivery artifacts"
 
 Single-page workflow:
 - import meeting
+- choose transcript or audio input
 - view next-week plan
 - view reading recommendations
 - inspect optional claims and evidence
@@ -341,17 +400,26 @@ Single-page workflow:
 
 Show transcript snippet and source link for each claim/evidence card.
 
-**Step 3: Add empty and loading states**
+**Step 3: Add audio-processing states**
+
+For audio imports, explicitly show:
+- audio upload
+- local transcription
+- transcript parsing
+
+Allow the user to review the generated transcript timeline before relying on downstream extraction output.
+
+**Step 4: Add empty and loading states**
 
 Make demo flow robust and readable.
 
-**Step 4: Run frontend tests**
+**Step 5: Run frontend tests**
 
 ```bash
 npm run test:frontend
 ```
 
-**Step 5: Commit**
+**Step 6: Commit**
 
 ```bash
 git add frontend
@@ -363,12 +431,13 @@ git commit -m "feat: add evidenceflow dashboard workflow"
 **Files:**
 - Create: `data/samples/demo_meeting_transcript.md`
 - Create: `data/samples/demo_expected_output.md`
+- Create: `data/samples/demo_meeting_audio.*`
 - Create: `backend/tests/test_demo_flow.py`
 - Create: `docs/development/demo-script.md`
 
-**Step 1: Prepare fixed demo sample**
+**Step 1: Prepare fixed demo samples**
 
-Include transcript with:
+Include transcript and one sanitized short audio sample with:
 - 1 student weekly progress report
 - 2 advisor ideas
 - 3 action items
@@ -376,14 +445,19 @@ Include transcript with:
 - 3 recommended readings
 - 1 optional claim requiring evidence
 
-**Step 2: Write end-to-end test**
+Do not commit private meeting recordings.
 
-Assert the pipeline returns stable, non-empty structured output.
+**Step 2: Write end-to-end tests**
+
+Assert the pipeline returns stable, non-empty structured output for:
+- transcript import
+- audio import
 
 **Step 3: Write 5-minute demo script**
 
 Cover:
 - import
+- optional audio upload path
 - extract
 - capture advisor ideas
 - generate next-week research plan

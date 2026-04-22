@@ -135,6 +135,46 @@ class ProjectMemoryService:
             )
         return snapshot
 
+    def update_action_item_status(
+        self,
+        project_id: str,
+        *,
+        meeting_id: str,
+        title: str,
+        owner: str,
+        status: str,
+    ) -> ActionItem | None:
+        updated_action_item = self.sqlite_store.update_action_item_status(
+            project_id,
+            meeting_id=meeting_id,
+            title=title,
+            owner=owner,
+            status=status,
+        )
+        if updated_action_item is None:
+            return None
+
+        self.vector_store.upsert_records(
+            [
+                ProjectMemoryVectorRecord(
+                    entry_id=self._action_item_entry_id(meeting_id, updated_action_item),
+                    project_id=project_id,
+                    meeting_id=meeting_id,
+                    entry_type="action_item",
+                    text=(
+                        f"{updated_action_item.title}. "
+                        f"owner={updated_action_item.owner}. "
+                        f"deadline={updated_action_item.deadline}"
+                    ),
+                    metadata={
+                        "priority": updated_action_item.priority,
+                        "status": updated_action_item.status,
+                    },
+                )
+            ]
+        )
+        return updated_action_item
+
     def _build_vector_records(
         self,
         *,
@@ -179,10 +219,10 @@ class ProjectMemoryService:
                 )
             )
 
-        for index, action_item in enumerate(action_items, start=1):
+        for action_item in action_items:
             records.append(
                 ProjectMemoryVectorRecord(
-                    entry_id=f"{meeting_id}:action_item:{index:02d}",
+                    entry_id=self._action_item_entry_id(meeting_id, action_item),
                     project_id=project_id,
                     meeting_id=meeting_id,
                     entry_type="action_item",
@@ -244,3 +284,8 @@ class ProjectMemoryService:
             )
 
         return records
+
+    def _action_item_entry_id(self, meeting_id: str, action_item: ActionItem) -> str:
+        normalized_title = action_item.title.lower().replace(" ", "_")
+        normalized_owner = action_item.owner.lower().replace(" ", "_")
+        return f"{meeting_id}:action_item:{normalized_title}:{normalized_owner}"

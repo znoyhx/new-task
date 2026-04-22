@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.deliverables import router as deliverables_router
 from backend.api.meetings import router as meetings_router
+from backend.api.projects import router as projects_router
 from backend.config import get_settings
 
 
@@ -20,6 +21,8 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://127.0.0.1:3000",
             "http://localhost:3000",
+            "http://127.0.0.1:3001",
+            "http://localhost:3001",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -27,6 +30,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(meetings_router)
     app.include_router(deliverables_router)
+    app.include_router(projects_router)
 
     @app.get("/")
     async def read_root() -> dict[str, str]:
